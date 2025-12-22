@@ -459,11 +459,16 @@ Respond with ONLY a JSON object in this format:
 
 
 def analyze_with_gemini(api_key: str, content: str, file_name: str, content_type: str, privacy_level: str) -> dict:
-    """Analyze file content with Gemini API (FREE)."""
+    """Analyze file content with Gemini API (FREE).
+
+    Uses gemini-2.5-flash model which has generous free tier limits.
+    Only makes ONE API request per file analysis.
+    """
     if not GEMINI_AVAILABLE:
         return {"success": False, "error": "Gemini SDK not installed. Please install google-genai package."}
 
     try:
+        # Create client with custom http options to control retries
         client = genai.Client(api_key=api_key)
         today = datetime.now().strftime("%Y-%m-%d")
 
@@ -519,7 +524,7 @@ Respond with ONLY a JSON object (no markdown, no code blocks):
 {{"suggestedName": "ActualContentDescription_IMG_{today}_Rev0.jpg", "reasoning": "I can see [specific description of what's in the image]", "confidence": 8, "detectedType": "IMG", "suggestedSubject": "SpecificContentInPascalCase"}}"""
 
             response = client.models.generate_content(
-                model='gemini-2.0-flash',
+                model='gemini-2.5-flash',
                 contents=[
                     types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
                     image_prompt
@@ -531,7 +536,7 @@ Respond with ONLY a JSON object (no markdown, no code blocks):
             full_prompt = base_prompt + f"\n\nContent preview: {sanitized_content}"
 
             response = client.models.generate_content(
-                model='gemini-2.0-flash',
+                model='gemini-2.5-flash',
                 contents=full_prompt
             )
 
@@ -568,11 +573,16 @@ Respond with ONLY a JSON object (no markdown, no code blocks):
 
     except Exception as e:
         error_msg = str(e)
-        if "API_KEY" in error_msg.upper() or "INVALID" in error_msg.upper():
+        # Check for specific error types
+        if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg:
+            return {"success": False, "error": "Rate limit reached. The free tier has limits per minute. Please wait 60 seconds and try again."}
+        elif "API_KEY" in error_msg.upper() or "INVALID" in error_msg.upper() or "401" in error_msg:
             return {"success": False, "error": "Invalid API key. Please check your Gemini API key."}
-        elif "QUOTA" in error_msg.upper() or "RATE" in error_msg.upper():
-            return {"success": False, "error": "Rate limit exceeded. Please wait a moment and try again."}
-        return {"success": False, "error": error_msg}
+        elif "403" in error_msg or "PERMISSION" in error_msg.upper():
+            return {"success": False, "error": "API key doesn't have permission. Make sure you've enabled the Gemini API in Google AI Studio."}
+        elif "404" in error_msg or "NOT_FOUND" in error_msg:
+            return {"success": False, "error": "Model not available. Please try again later."}
+        return {"success": False, "error": f"Gemini API error: {error_msg[:200]}"}
 
 
 def generate_filename(format_type: str, subject: str, date_val: datetime, revision: str,
@@ -778,7 +788,7 @@ with tab2:
         )
 
         if ai_provider == "gemini":
-            st.success("Using Gemini 2.0 Flash - FREE tier with generous limits!")
+            st.success("Using Gemini 2.5 Flash - FREE tier with generous limits!")
 
             # Gemini API Key input
             api_key = st.text_input(
