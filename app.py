@@ -6,6 +6,9 @@ import json
 from datetime import datetime
 from io import BytesIO
 
+# Default Gemini API key for team use (FREE tier)
+DEFAULT_GEMINI_API_KEY = "AIzaSyCfTtyku5WmaqJp_MK1WQfJzkYpB9zg3ec"
+
 # Gemini API
 try:
     from google import genai
@@ -226,36 +229,6 @@ HELP_CONTENT = {
 }
 
 
-def sanitize_content(content: str, level: str = "medium") -> str:
-    """Sanitize content based on privacy level."""
-    if level == "low":
-        return content[:3000]
-
-    sanitized = content[:2000]
-
-    if level in ["medium", "high"]:
-        # Remove email addresses
-        sanitized = re.sub(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', '[EMAIL]', sanitized)
-        # Remove phone numbers
-        sanitized = re.sub(r'(\+?1[-.\s]?)?\(?[0-9]{3}\)?[-.\s]?[0-9]{3}[-.\s]?[0-9]{4}', '[PHONE]', sanitized)
-        # Remove SSN
-        sanitized = re.sub(r'\b\d{3}-\d{2}-\d{4}\b', '[SSN]', sanitized)
-        # Remove credit card numbers
-        sanitized = re.sub(r'\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b', '[CARD]', sanitized)
-        # Remove dollar amounts over $1000
-        sanitized = re.sub(r'\$[0-9]{1,3}(,[0-9]{3})+(\.[0-9]{2})?', '[AMOUNT]', sanitized)
-        # Remove Canadian postal codes
-        sanitized = re.sub(r'\b[A-Za-z]\d[A-Za-z][-\s]?\d[A-Za-z]\d\b', '[POSTAL]', sanitized)
-        # Remove SIN numbers
-        sanitized = re.sub(r'\b\d{3}[-\s]?\d{3}[-\s]?\d{3}\b', '[SIN]', sanitized)
-
-    if level == "high":
-        # For high privacy, only keep first 500 chars
-        sanitized = sanitized[:500]
-
-    return sanitized
-
-
 def read_pdf_content(file_bytes: bytes) -> str:
     """Extract text from PDF file."""
     if not PDF_AVAILABLE:
@@ -359,10 +332,16 @@ Key elements for the filename:
 - Date: Use today's date {today} if no date is visible
 - Revision: Use 'Rev0' for final version
 
+In your reasoning, explain:
+1. What you can see in the image (describe the visual content)
+2. Why you chose the specific Subject name based on the image content
+3. Why you selected IMG, SCR, or DIA as the document form
+4. How the CPE naming convention applies to this image
+
 Respond with ONLY a JSON object:
 {{
     "suggestedName": "ActualContentDescription_IMG_{today}_Rev0.jpg",
-    "reasoning": "I can see [specific description of what's in the image]",
+    "reasoning": "Detailed explanation: I can see [description]. I chose the subject [Subject] because [reason]. I used IMG/SCR/DIA because [reason]. This follows CPE naming convention by [explanation].",
     "confidence": 8,
     "detectedType": "IMG",
     "suggestedSubject": "SpecificContentInPascalCase"
@@ -380,8 +359,8 @@ Respond with ONLY a JSON object:
                 }]
             )
         else:
-            # Text document analysis
-            sanitized_content = sanitize_content(content, privacy_level)
+            # Text document analysis - send full content for best analysis
+            document_content = content[:4000]  # Limit to 4000 chars for API
 
             message = client.messages.create(
                 model="claude-sonnet-4-20250514",
@@ -403,7 +382,7 @@ DOCUMENT FORMS (use 3-letter codes):
 - INS (Instruction), LTR (Letter), MIN (Minutes), MNL (Manual)
 - PLN (Plan), POL (Policy), PRC (Procedure), PRO (Proposal)
 - PRS (Presentation), RPT (Report), RVW (Review), SCH (Schedule)
-- SUM (Summary), TEM (Template), and others
+- SUM (Summary), TEM (Template), IMG (Image), SCR (Screenshot), DIA (Diagram)
 
 REVISION STATUS:
 - A, B, C for drafts
@@ -411,12 +390,18 @@ REVISION STATUS:
 - 1, 2, 3+ for subsequent revisions
 
 Current file: {file_name}
-Content preview: {sanitized_content}
+Content: {document_content}
+
+IMPORTANT: In your reasoning, explain:
+1. Why you chose the specific Subject name (what content led to this choice)
+2. Why you selected this Document Form code (what type of document is this)
+3. Why you used this naming format (Basic, Advanced, or Course-specific)
+4. Any other relevant observations about how the CPE naming convention applies
 
 Respond with ONLY a JSON object in this format:
 {{
     "suggestedName": "RecommendedFileName_{today}_Rev0.pdf",
-    "reasoning": "Brief explanation of naming choice",
+    "reasoning": "Detailed explanation: I chose [Subject] because the document discusses [topic]. I used the [XXX] document form because this is a [type]. I applied the [format] naming convention because [reason].",
     "confidence": 8,
     "detectedType": "document form detected",
     "suggestedSubject": "detected subject in PascalCase"
@@ -497,8 +482,14 @@ REVISION STATUS:
 
 Current file: {file_name}
 
+IMPORTANT: In your reasoning, explain:
+1. Why you chose the specific Subject name (what content led to this choice)
+2. Why you selected this Document Form code (what type of document is this)
+3. Why you used this naming format (Basic, Advanced, or Course-specific)
+4. Any other relevant observations about how the CPE naming convention applies
+
 Respond with ONLY a JSON object in this exact format (no markdown, no code blocks):
-{{"suggestedName": "RecommendedFileName_{today}_Rev0.ext", "reasoning": "Brief explanation of naming choice", "confidence": 8, "detectedType": "document form detected", "suggestedSubject": "detected subject in PascalCase"}}"""
+{{"suggestedName": "RecommendedFileName_{today}_Rev0.ext", "reasoning": "Detailed explanation: I chose [Subject] because the document discusses [topic]. I used the [XXX] document form because this is a [type]. I applied the [format] naming convention because [reason].", "confidence": 8, "detectedType": "document form detected", "suggestedSubject": "detected subject in PascalCase"}}"""
 
         if content_type == "image":
             # Image analysis with Gemini
@@ -520,8 +511,14 @@ Key elements for the filename:
 - Date: Use today's date {today} if no date is visible
 - Revision: Use 'Rev0' for final version
 
+In your reasoning, explain:
+1. What you can see in the image (describe the visual content)
+2. Why you chose the specific Subject name based on the image content
+3. Why you selected IMG, SCR, or DIA as the document form
+4. How the CPE naming convention applies to this image
+
 Respond with ONLY a JSON object (no markdown, no code blocks):
-{{"suggestedName": "ActualContentDescription_IMG_{today}_Rev0.jpg", "reasoning": "I can see [specific description of what's in the image]", "confidence": 8, "detectedType": "IMG", "suggestedSubject": "SpecificContentInPascalCase"}}"""
+{{"suggestedName": "ActualContentDescription_IMG_{today}_Rev0.jpg", "reasoning": "Detailed explanation: I can see [description]. I chose the subject [Subject] because [reason]. I used IMG/SCR/DIA because [reason]. This follows CPE naming convention by [explanation].", "confidence": 8, "detectedType": "IMG", "suggestedSubject": "SpecificContentInPascalCase"}}"""
 
             response = client.models.generate_content(
                 model='gemini-2.5-flash',
@@ -531,9 +528,9 @@ Respond with ONLY a JSON object (no markdown, no code blocks):
                 ]
             )
         else:
-            # Text document analysis
-            sanitized_content = sanitize_content(content, privacy_level)
-            full_prompt = base_prompt + f"\n\nContent preview: {sanitized_content}"
+            # Text document analysis - send full content for best analysis
+            document_content = content[:4000]  # Limit to 4000 chars for API
+            full_prompt = base_prompt + f"\n\nContent: {document_content}"
 
             response = client.models.generate_content(
                 model='gemini-2.5-flash',
@@ -788,24 +785,12 @@ with tab2:
         )
 
         if ai_provider == "gemini":
-            st.success("Using Gemini 2.5 Flash - FREE tier with generous limits!")
+            st.success("Using Gemini 2.5 Flash - FREE for UBC CPE team!")
 
-            # Gemini API Key input
-            api_key = st.text_input(
-                "Gemini API Key",
-                type="password",
-                placeholder="AIza...",
-                help="Get your free API key from Google AI Studio"
-            )
+            # Use default API key - no need for users to enter one
+            api_key = DEFAULT_GEMINI_API_KEY
 
-            # Check for API key in secrets (for Streamlit Cloud)
-            if not api_key:
-                try:
-                    api_key = st.secrets.get("GEMINI_API_KEY", "")
-                except Exception:
-                    pass
-
-            st.markdown("[Get free API key from Google AI Studio](https://aistudio.google.com/apikey)")
+            st.info("API key is pre-configured. Ready to analyze files!")
 
         else:
             # Claude API Key input
@@ -825,34 +810,16 @@ with tab2:
 
             st.info("**Note:** Claude costs approximately $0.005 per file.")
 
-        # Privacy controls
-        st.subheader("Privacy Protection")
-        privacy_level = st.selectbox(
-            "Privacy Level",
-            ["high", "medium", "low"],
-            index=1,
-            format_func=lambda x: {
-                "high": "🛡️ Maximum Privacy",
-                "medium": "⚖️ Balanced",
-                "low": "📄 Full Content"
-            }[x]
-        )
-
-        privacy_descriptions = {
-            "high": "Sends only document structure and keywords. Maximum privacy.",
-            "medium": "Removes sensitive info (emails, phone, addresses) before sending.",
-            "low": "Sends full document content. Best analysis quality."
-        }
-        st.info(privacy_descriptions[privacy_level])
+        # Always use full content for best analysis
+        privacy_level = "low"
 
         # How it works
         st.subheader("How it works:")
         provider_name = "Gemini" if ai_provider == "gemini" else "Claude"
         st.markdown(f"""
         1. Upload files below
-        2. Choose privacy level
-        3. {provider_name} AI analyzes content
-        4. Get CPE-compliant name suggestions
+        2. {provider_name} AI analyzes content
+        3. Get CPE-compliant name suggestions
         """)
 
     with col1:
