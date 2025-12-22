@@ -6,6 +6,14 @@ import json
 from datetime import datetime
 from io import BytesIO
 
+# Gemini API
+try:
+    from google import genai
+    from google.genai import types
+    GEMINI_AVAILABLE = True
+except ImportError:
+    GEMINI_AVAILABLE = False
+
 # PDF parsing
 try:
     from PyPDF2 import PdfReader
@@ -450,6 +458,123 @@ Respond with ONLY a JSON object in this format:
         return {"success": False, "error": str(e)}
 
 
+def analyze_with_gemini(api_key: str, content: str, file_name: str, content_type: str, privacy_level: str) -> dict:
+    """Analyze file content with Gemini API (FREE)."""
+    if not GEMINI_AVAILABLE:
+        return {"success": False, "error": "Gemini SDK not installed. Please install google-genai package."}
+
+    try:
+        client = genai.Client(api_key=api_key)
+        today = datetime.now().strftime("%Y-%m-%d")
+
+        # Build the prompt
+        base_prompt = f"""You are a file naming expert for the University of British Columbia's Continuing Professional Education (CPE) department.
+
+Analyze this file and suggest a CPE-compliant filename following these conventions:
+
+BASIC FORMAT: Subject_Date_RevisionStatus.ext
+ADVANCED FORMAT: ProjectCode_Subject_DocumentForm_Date_RevisionStatus.ext
+COURSE FORMAT: FacultySchool_CourseCode_Term_DocumentForm_Date_RevisionStatus.ext
+
+DOCUMENT FORMS (use 3-letter codes):
+- AGD (Agenda), AGR (Agreement), ANN (Announcement), APP (Appendix)
+- BGT (Budget), BRN (Briefing Note), CCP (Concept Paper), CON (Contract)
+- DAT (Data Set), FCT (Fact Sheet), FRM (Form), GUI (Guidelines)
+- INS (Instruction), LTR (Letter), MIN (Minutes), MNL (Manual)
+- PLN (Plan), POL (Policy), PRC (Procedure), PRO (Proposal)
+- PRS (Presentation), RPT (Report), RVW (Review), SCH (Schedule)
+- SUM (Summary), TEM (Template), IMG (Image), SCR (Screenshot), DIA (Diagram)
+
+REVISION STATUS:
+- A, B, C for drafts
+- 0 for first final version
+- 1, 2, 3+ for subsequent revisions
+
+Current file: {file_name}
+
+Respond with ONLY a JSON object in this exact format (no markdown, no code blocks):
+{{"suggestedName": "RecommendedFileName_{today}_Rev0.ext", "reasoning": "Brief explanation of naming choice", "confidence": 8, "detectedType": "document form detected", "suggestedSubject": "detected subject in PascalCase"}}"""
+
+        if content_type == "image":
+            # Image analysis with Gemini
+            mime_type = content.split(';')[0].replace('data:', '')
+            base64_data = content.split(',')[1]
+            image_bytes = base64.b64decode(base64_data)
+
+            image_prompt = f"""I need help creating a CPE-compliant filename for this image.
+
+IMPORTANT: First, carefully analyze what is shown in this image. Describe what you see in detail.
+
+Based on what you observe, suggest an appropriate filename that accurately reflects the actual content.
+
+Current filename: {file_name}
+
+Key elements for the filename:
+- Subject (required): What is actually shown in the image (use PascalCase)
+- Document Form: Use IMG for photos, SCR for screenshots, DIA for diagrams
+- Date: Use today's date {today} if no date is visible
+- Revision: Use 'Rev0' for final version
+
+Respond with ONLY a JSON object (no markdown, no code blocks):
+{{"suggestedName": "ActualContentDescription_IMG_{today}_Rev0.jpg", "reasoning": "I can see [specific description of what's in the image]", "confidence": 8, "detectedType": "IMG", "suggestedSubject": "SpecificContentInPascalCase"}}"""
+
+            response = client.models.generate_content(
+                model='gemini-2.0-flash',
+                contents=[
+                    types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
+                    image_prompt
+                ]
+            )
+        else:
+            # Text document analysis
+            sanitized_content = sanitize_content(content, privacy_level)
+            full_prompt = base_prompt + f"\n\nContent preview: {sanitized_content}"
+
+            response = client.models.generate_content(
+                model='gemini-2.0-flash',
+                contents=full_prompt
+            )
+
+        # Parse response
+        response_text = response.text
+
+        # Try to extract JSON from the response
+        try:
+            # Remove markdown code blocks if present
+            cleaned_response = re.sub(r'```json\s*', '', response_text)
+            cleaned_response = re.sub(r'```\s*', '', cleaned_response)
+            cleaned_response = cleaned_response.strip()
+
+            # Find JSON in response
+            json_match = re.search(r'\{[\s\S]*\}', cleaned_response)
+            if json_match:
+                result = json.loads(json_match.group())
+                return {"success": True, "analysis": result}
+        except json.JSONDecodeError:
+            pass
+
+        # Fallback if JSON parsing fails
+        ext = file_name.split('.')[-1] if '.' in file_name else 'pdf'
+        return {
+            "success": True,
+            "analysis": {
+                "suggestedName": f"Document_{today}_Rev0.{ext}",
+                "reasoning": "AI analysis completed but response format was unclear",
+                "confidence": 5,
+                "detectedType": "unknown",
+                "suggestedSubject": "Document"
+            }
+        }
+
+    except Exception as e:
+        error_msg = str(e)
+        if "API_KEY" in error_msg.upper() or "INVALID" in error_msg.upper():
+            return {"success": False, "error": "Invalid API key. Please check your Gemini API key."}
+        elif "QUOTA" in error_msg.upper() or "RATE" in error_msg.upper():
+            return {"success": False, "error": "Rate limit exceeded. Please wait a moment and try again."}
+        return {"success": False, "error": error_msg}
+
+
 def generate_filename(format_type: str, subject: str, date_val: datetime, revision: str,
                      extension: str, project_code: str = "", document_form: str = "",
                      faculty_school: str = "", course_code: str = "", term: str = "") -> tuple:
@@ -638,22 +763,57 @@ with tab2:
     col1, col2 = st.columns([2, 1])
 
     with col2:
-        st.subheader("Claude AI Settings")
+        st.subheader("AI Settings")
 
-        # API Key input
-        api_key = st.text_input(
-            "Claude API Key",
-            type="password",
-            placeholder="sk-ant-...",
-            help="Your Anthropic API key"
+        # AI Provider selection
+        ai_provider = st.radio(
+            "Choose AI Provider",
+            ["gemini", "claude"],
+            format_func=lambda x: {
+                "gemini": "🆓 Gemini (FREE)",
+                "claude": "💰 Claude (Paid)"
+            }[x],
+            horizontal=True,
+            help="Gemini offers free API access with generous limits"
         )
 
-        # Check for API key in secrets (for Streamlit Cloud)
-        if not api_key:
-            try:
-                api_key = st.secrets.get("ANTHROPIC_API_KEY", "")
-            except Exception:
-                pass
+        if ai_provider == "gemini":
+            st.success("Using Gemini 2.0 Flash - FREE tier with generous limits!")
+
+            # Gemini API Key input
+            api_key = st.text_input(
+                "Gemini API Key",
+                type="password",
+                placeholder="AIza...",
+                help="Get your free API key from Google AI Studio"
+            )
+
+            # Check for API key in secrets (for Streamlit Cloud)
+            if not api_key:
+                try:
+                    api_key = st.secrets.get("GEMINI_API_KEY", "")
+                except Exception:
+                    pass
+
+            st.markdown("[Get free API key from Google AI Studio](https://aistudio.google.com/apikey)")
+
+        else:
+            # Claude API Key input
+            api_key = st.text_input(
+                "Claude API Key",
+                type="password",
+                placeholder="sk-ant-...",
+                help="Your Anthropic API key"
+            )
+
+            # Check for API key in secrets (for Streamlit Cloud)
+            if not api_key:
+                try:
+                    api_key = st.secrets.get("ANTHROPIC_API_KEY", "")
+                except Exception:
+                    pass
+
+            st.info("**Note:** Claude costs approximately $0.005 per file.")
 
         # Privacy controls
         st.subheader("Privacy Protection")
@@ -677,14 +837,13 @@ with tab2:
 
         # How it works
         st.subheader("How it works:")
-        st.markdown("""
+        provider_name = "Gemini" if ai_provider == "gemini" else "Claude"
+        st.markdown(f"""
         1. Upload files below
         2. Choose privacy level
-        3. Claude AI analyzes content
+        3. {provider_name} AI analyzes content
         4. Get CPE-compliant name suggestions
         """)
-
-        st.info("**Note:** Analysis costs approximately $0.005 per file.")
 
     with col1:
         st.subheader("Upload Files")
@@ -707,9 +866,11 @@ with tab2:
                     st.write(f"Type: {file.type}")
 
             # Analyze button
-            if st.button("🤖 Analyze Files with Claude AI", type="primary", use_container_width=True):
+            button_label = f"🤖 Analyze Files with {provider_name} AI" + (" (FREE)" if ai_provider == "gemini" else "")
+            if st.button(button_label, type="primary", use_container_width=True):
                 if not api_key:
-                    st.error("Please enter your Claude API key in the sidebar or configure it in Streamlit secrets.")
+                    key_type = "Gemini" if ai_provider == "gemini" else "Claude"
+                    st.error(f"Please enter your {key_type} API key or configure it in Streamlit secrets.")
                 else:
                     progress_bar = st.progress(0)
                     status_text = st.empty()
@@ -717,7 +878,7 @@ with tab2:
                     results = []
 
                     for i, file in enumerate(uploaded_files):
-                        status_text.text(f"Analyzing {file.name}... ({i+1}/{len(uploaded_files)})")
+                        status_text.text(f"Analyzing {file.name} with {provider_name}... ({i+1}/{len(uploaded_files)})")
                         progress_bar.progress((i + 1) / len(uploaded_files))
 
                         # Read file content
@@ -732,12 +893,15 @@ with tab2:
                             })
                             continue
 
-                        # Analyze with Claude
-                        result = analyze_with_claude(api_key, content, file.name, content_type, privacy_level)
+                        # Analyze with selected AI provider
+                        if ai_provider == "gemini":
+                            result = analyze_with_gemini(api_key, content, file.name, content_type, privacy_level)
+                        else:
+                            result = analyze_with_claude(api_key, content, file.name, content_type, privacy_level)
                         result["file"] = file.name
                         results.append(result)
 
-                    status_text.text("Analysis complete!")
+                    status_text.text(f"Analysis complete with {provider_name}!")
 
                     # Display results
                     st.subheader("Results")
@@ -771,7 +935,7 @@ with tab2:
 st.divider()
 st.markdown("""
 <div style="text-align: center; color: #666; font-size: 12px;">
-    <p>UBC CPE File Naming Tool | Powered by Claude AI</p>
+    <p>UBC CPE File Naming Tool | Powered by Gemini AI (Free) & Claude AI</p>
     <p>For use by UBC Continuing Professional Education staff</p>
 </div>
 """, unsafe_allow_html=True)
