@@ -1,21 +1,16 @@
 import streamlit as st
 import anthropic
+import requests
 import base64
 import re
 import json
 from datetime import datetime
 from io import BytesIO
 
-# Default Gemini API key for team use (FREE tier)
-DEFAULT_GEMINI_API_KEY = "AIzaSyCfTtyku5WmaqJp_MK1WQfJzkYpB9zg3ec"
-
-# Gemini API
-try:
-    from google import genai
-    from google.genai import types
-    GEMINI_AVAILABLE = True
-except ImportError:
-    GEMINI_AVAILABLE = False
+# OpenRouter API key for team use (Gemini via OpenRouter)
+OPENROUTER_API_KEY = "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"
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1/chat/completions"
+GEMINI_MODEL = "google/gemini-2.5-flash"
 
 # PDF parsing
 try:
@@ -444,17 +439,11 @@ Respond with ONLY a JSON object in this format:
 
 
 def analyze_with_gemini(api_key: str, content: str, file_name: str, content_type: str, privacy_level: str) -> dict:
-    """Analyze file content with Gemini API (FREE).
+    """Analyze file content with Gemini via OpenRouter API.
 
-    Uses gemini-2.5-flash model which has generous free tier limits.
-    Only makes ONE API request per file analysis.
+    Uses google/gemini-2.5-flash model through OpenRouter.
     """
-    if not GEMINI_AVAILABLE:
-        return {"success": False, "error": "Gemini SDK not installed. Please install google-genai package."}
-
     try:
-        # Create client with custom http options to control retries
-        client = genai.Client(api_key=api_key)
         today = datetime.now().strftime("%Y-%m-%d")
 
         # Build the prompt
@@ -492,10 +481,9 @@ Respond with ONLY a JSON object in this exact format (no markdown, no code block
 {{"suggestedName": "RecommendedFileName_{today}_Rev0.ext", "reasoning": "Detailed explanation: I chose [Subject] because the document discusses [topic]. I used the [XXX] document form because this is a [type]. I applied the [format] naming convention because [reason].", "confidence": 8, "detectedType": "document form detected", "suggestedSubject": "detected subject in PascalCase"}}"""
 
         if content_type == "image":
-            # Image analysis with Gemini
+            # Image analysis with Gemini via OpenRouter
             mime_type = content.split(';')[0].replace('data:', '')
             base64_data = content.split(',')[1]
-            image_bytes = base64.b64decode(base64_data)
 
             image_prompt = f"""I need help creating a CPE-compliant filename for this image.
 
@@ -520,25 +508,56 @@ In your reasoning, explain:
 Respond with ONLY a JSON object (no markdown, no code blocks):
 {{"suggestedName": "ActualContentDescription_IMG_{today}_Rev0.jpg", "reasoning": "Detailed explanation: I can see [description]. I chose the subject [Subject] because [reason]. I used IMG/SCR/DIA because [reason]. This follows CPE naming convention by [explanation].", "confidence": 8, "detectedType": "IMG", "suggestedSubject": "SpecificContentInPascalCase"}}"""
 
-            response = client.models.generate_content(
-                model='gemini-2.5-flash',
-                contents=[
-                    types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
-                    image_prompt
+            # OpenRouter request with image
+            messages = [{
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:{mime_type};base64,{base64_data}"
+                        }
+                    },
+                    {
+                        "type": "text",
+                        "text": image_prompt
+                    }
                 ]
-            )
+            }]
         else:
             # Text document analysis - send full content for best analysis
             document_content = content[:4000]  # Limit to 4000 chars for API
             full_prompt = base_prompt + f"\n\nContent: {document_content}"
 
-            response = client.models.generate_content(
-                model='gemini-2.5-flash',
-                contents=full_prompt
-            )
+            messages = [{
+                "role": "user",
+                "content": full_prompt
+            }]
+
+        # Make OpenRouter API request
+        response = requests.post(
+            OPENROUTER_BASE_URL,
+            headers={
+                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                "Content-Type": "application/json",
+                "HTTP-Referer": "https://ubc-cpe-naming-tool.streamlit.app",
+                "X-Title": "UBC CPE File Naming Tool"
+            },
+            json={
+                "model": GEMINI_MODEL,
+                "messages": messages
+            },
+            timeout=60
+        )
+
+        if response.status_code != 200:
+            error_data = response.json() if response.text else {}
+            error_msg = error_data.get("error", {}).get("message", f"HTTP {response.status_code}")
+            return {"success": False, "error": f"API error: {error_msg}"}
 
         # Parse response
-        response_text = response.text
+        result_data = response.json()
+        response_text = result_data["choices"][0]["message"]["content"]
 
         # Try to extract JSON from the response
         try:
@@ -568,18 +587,15 @@ Respond with ONLY a JSON object (no markdown, no code blocks):
             }
         }
 
+    except requests.exceptions.Timeout:
+        return {"success": False, "error": "Request timed out. Please try again."}
+    except requests.exceptions.RequestException as e:
+        return {"success": False, "error": f"Network error: {str(e)}"}
     except Exception as e:
         error_msg = str(e)
-        # Check for specific error types
-        if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg:
-            return {"success": False, "error": "Rate limit reached. The free tier has limits per minute. Please wait 60 seconds and try again."}
-        elif "API_KEY" in error_msg.upper() or "INVALID" in error_msg.upper() or "401" in error_msg:
-            return {"success": False, "error": "Invalid API key. Please check your Gemini API key."}
-        elif "403" in error_msg or "PERMISSION" in error_msg.upper():
-            return {"success": False, "error": "API key doesn't have permission. Make sure you've enabled the Gemini API in Google AI Studio."}
-        elif "404" in error_msg or "NOT_FOUND" in error_msg:
-            return {"success": False, "error": "Model not available. Please try again later."}
-        return {"success": False, "error": f"Gemini API error: {error_msg[:200]}"}
+        if "429" in error_msg:
+            return {"success": False, "error": "Rate limit reached. Please wait a moment and try again."}
+        return {"success": False, "error": f"Error: {error_msg[:200]}"}
 
 
 def generate_filename(format_type: str, subject: str, date_val: datetime, revision: str,
@@ -785,12 +801,12 @@ with tab2:
         )
 
         if ai_provider == "gemini":
-            st.success("Using Gemini 2.5 Flash - FREE for UBC CPE team!")
+            st.success("Using Gemini 2.5 Flash via OpenRouter")
 
-            # Use default API key - no need for users to enter one
-            api_key = DEFAULT_GEMINI_API_KEY
+            # API key is built-in via OpenRouter
+            api_key = OPENROUTER_API_KEY
 
-            st.info("API key is pre-configured. Ready to analyze files!")
+            st.info("Ready to analyze files!")
 
         else:
             # Claude API Key input
