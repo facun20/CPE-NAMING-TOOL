@@ -370,14 +370,58 @@ BASIC FORMAT: Subject_Date_RevisionStatus.ext
 ADVANCED FORMAT: ProjectCode_Subject_DocumentForm_Date_RevisionStatus.ext
 COURSE FORMAT: FacultySchool_CourseCode_Term_DocumentForm_Date_RevisionStatus.ext
 
-DOCUMENT FORMS (use 3-letter codes):
-- AGD (Agenda), AGR (Agreement), ANN (Announcement), APP (Appendix)
-- BGT (Budget), BRN (Briefing Note), CCP (Concept Paper), CON (Contract)
-- DAT (Data Set), FCT (Fact Sheet), FRM (Form), GUI (Guidelines)
-- INS (Instruction), LTR (Letter), MIN (Minutes), MNL (Manual)
-- PLN (Plan), POL (Policy), PRC (Procedure), PRO (Proposal)
-- PRS (Presentation), RPT (Report), RVW (Review), SCH (Schedule)
-- SUM (Summary), TEM (Template), IMG (Image), SCR (Screenshot), DIA (Diagram)
+=== CRITICAL: DOCUMENT FORM DETECTION ===
+FIRST, scan the document content for these EXACT phrases or keywords. If found, you MUST use the corresponding code:
+
+LETTERS & CERTIFICATES (check these first - they are specific):
+- "Letter of Proficiency" or "Proficiency Letter" → USE LPR
+- "Letter of Completion" or "Completion Letter" → USE LCO
+- "Letter of Attendance" or "Attendance Letter" → USE LAT
+- "Letter of Participation" or "Participation Letter" → USE LPA
+- "Non-Credit Certificate" → USE NCC
+- "Non-Credit MicroCertificate" or "MicroCertificate" → USE NCM
+
+COMMON DOCUMENT TYPES:
+- "Agenda" (meeting agenda, event agenda) → USE AGD
+- "Agreement" (formal agreement, MOU) → USE AGR
+- "Announcement" → USE ANN
+- "Appendix" → USE APP
+- "Attendance" (attendance record/sheet) → USE ATD
+- "Budget" or "Course Budget" → USE BGT
+- "Briefing Note" or "Brief" → USE BRN
+- "Concept Paper" → USE CCP
+- "Contract" → USE CON
+- "Data Set" or "Dataset" → USE DAT
+- "Fact Sheet" → USE FCT
+- "Form" (application form, registration form) → USE FRM
+- "Grant" (grant application, grant proposal) → USE GRA
+- "Guidelines" or "Guide" → USE GUI
+- "Instructions" or "How to" → USE INS
+- "Interview" (interview questions, transcript) → USE INT
+- "Invoice" → USE INV
+- "Legal" (legal document, terms) → USE LGL
+- "Letter" (general letter, not specific type above) → USE LTR
+- "Minutes" (meeting minutes) → USE MIN
+- "Manual" (user manual, training manual) → USE MNL
+- "Plan" (project plan, work plan) → USE PLN
+- "Policy" → USE POL
+- "Procedure" or "SOP" → USE PRC
+- "Proposal" → USE PRO
+- "Presentation" or "Slides" → USE PRS
+- "Poster" → USE PST
+- "Report" (annual report, research report, brief) → USE RPT
+- "Review" → USE RVW
+- "Schedule" (course schedule, event schedule) → USE SCH
+- "Sample" → USE SMP
+- "Survey" (questionnaire) → USE SRY
+- "Summary" or "Executive Summary" → USE SUM
+- "Template" → USE TEM
+- "Timeline" → USE TML
+
+IMAGES:
+- Photos, pictures → USE IMG
+- Screenshots → USE SCR
+- Diagrams, flowcharts, charts → USE DIA
 
 REVISION STATUS:
 - A, B, C for drafts
@@ -387,18 +431,18 @@ REVISION STATUS:
 Current file: {file_name}
 Content: {document_content}
 
-IMPORTANT: In your reasoning, explain:
-1. Why you chose the specific Subject name (what content led to this choice)
-2. Why you selected this Document Form code (what type of document is this)
-3. Why you used this naming format (Basic, Advanced, or Course-specific)
-4. Any other relevant observations about how the CPE naming convention applies
+IMPORTANT INSTRUCTIONS:
+1. FIRST scan the content for any of the keywords/phrases above
+2. If you find a match, you MUST use that document form code
+3. In your reasoning, quote the exact text you found that matched
+4. Only if NO keywords match should you infer the document type from context
 
 Respond with ONLY a JSON object in this format:
 {{
     "suggestedName": "RecommendedFileName_{today}_Rev0.pdf",
-    "reasoning": "Detailed explanation: I chose [Subject] because the document discusses [topic]. I used the [XXX] document form because this is a [type]. I applied the [format] naming convention because [reason].",
+    "reasoning": "I found '[exact phrase from document]' in the content, which matches the [CODE] document form. I chose [Subject] because [reason].",
     "confidence": 8,
-    "detectedType": "document form detected",
+    "detectedType": "CODE",
     "suggestedSubject": "detected subject in PascalCase"
 }}"""
                 }]
@@ -455,14 +499,58 @@ BASIC FORMAT: Subject_Date_RevisionStatus.ext
 ADVANCED FORMAT: ProjectCode_Subject_DocumentForm_Date_RevisionStatus.ext
 COURSE FORMAT: FacultySchool_CourseCode_Term_DocumentForm_Date_RevisionStatus.ext
 
-DOCUMENT FORMS (use 3-letter codes):
-- AGD (Agenda), AGR (Agreement), ANN (Announcement), APP (Appendix)
-- BGT (Budget), BRN (Briefing Note), CCP (Concept Paper), CON (Contract)
-- DAT (Data Set), FCT (Fact Sheet), FRM (Form), GUI (Guidelines)
-- INS (Instruction), LTR (Letter), MIN (Minutes), MNL (Manual)
-- PLN (Plan), POL (Policy), PRC (Procedure), PRO (Proposal)
-- PRS (Presentation), RPT (Report), RVW (Review), SCH (Schedule)
-- SUM (Summary), TEM (Template), IMG (Image), SCR (Screenshot), DIA (Diagram)
+=== CRITICAL: DOCUMENT FORM DETECTION ===
+FIRST, scan the document content for these EXACT phrases or keywords. If found, you MUST use the corresponding code:
+
+LETTERS & CERTIFICATES (check these first - they are specific):
+- "Letter of Proficiency" or "Proficiency Letter" → USE LPR
+- "Letter of Completion" or "Completion Letter" → USE LCO
+- "Letter of Attendance" or "Attendance Letter" → USE LAT
+- "Letter of Participation" or "Participation Letter" → USE LPA
+- "Non-Credit Certificate" → USE NCC
+- "Non-Credit MicroCertificate" or "MicroCertificate" → USE NCM
+
+COMMON DOCUMENT TYPES:
+- "Agenda" (meeting agenda, event agenda) → USE AGD
+- "Agreement" (formal agreement, MOU) → USE AGR
+- "Announcement" → USE ANN
+- "Appendix" → USE APP
+- "Attendance" (attendance record/sheet) → USE ATD
+- "Budget" or "Course Budget" → USE BGT
+- "Briefing Note" or "Brief" → USE BRN
+- "Concept Paper" → USE CCP
+- "Contract" → USE CON
+- "Data Set" or "Dataset" → USE DAT
+- "Fact Sheet" → USE FCT
+- "Form" (application form, registration form) → USE FRM
+- "Grant" (grant application, grant proposal) → USE GRA
+- "Guidelines" or "Guide" → USE GUI
+- "Instructions" or "How to" → USE INS
+- "Interview" (interview questions, transcript) → USE INT
+- "Invoice" → USE INV
+- "Legal" (legal document, terms) → USE LGL
+- "Letter" (general letter, not specific type above) → USE LTR
+- "Minutes" (meeting minutes) → USE MIN
+- "Manual" (user manual, training manual) → USE MNL
+- "Plan" (project plan, work plan) → USE PLN
+- "Policy" → USE POL
+- "Procedure" or "SOP" → USE PRC
+- "Proposal" → USE PRO
+- "Presentation" or "Slides" → USE PRS
+- "Poster" → USE PST
+- "Report" (annual report, research report, brief) → USE RPT
+- "Review" → USE RVW
+- "Schedule" (course schedule, event schedule) → USE SCH
+- "Sample" → USE SMP
+- "Survey" (questionnaire) → USE SRY
+- "Summary" or "Executive Summary" → USE SUM
+- "Template" → USE TEM
+- "Timeline" → USE TML
+
+IMAGES:
+- Photos, pictures → USE IMG
+- Screenshots → USE SCR
+- Diagrams, flowcharts, charts → USE DIA
 
 REVISION STATUS:
 - A, B, C for drafts
@@ -471,14 +559,14 @@ REVISION STATUS:
 
 Current file: {file_name}
 
-IMPORTANT: In your reasoning, explain:
-1. Why you chose the specific Subject name (what content led to this choice)
-2. Why you selected this Document Form code (what type of document is this)
-3. Why you used this naming format (Basic, Advanced, or Course-specific)
-4. Any other relevant observations about how the CPE naming convention applies
+IMPORTANT INSTRUCTIONS:
+1. FIRST scan the content for any of the keywords/phrases above
+2. If you find a match, you MUST use that document form code
+3. In your reasoning, quote the exact text you found that matched
+4. Only if NO keywords match should you infer the document type from context
 
 Respond with ONLY a JSON object in this exact format (no markdown, no code blocks):
-{{"suggestedName": "RecommendedFileName_{today}_Rev0.ext", "reasoning": "Detailed explanation: I chose [Subject] because the document discusses [topic]. I used the [XXX] document form because this is a [type]. I applied the [format] naming convention because [reason].", "confidence": 8, "detectedType": "document form detected", "suggestedSubject": "detected subject in PascalCase"}}"""
+{{"suggestedName": "RecommendedFileName_{today}_Rev0.ext", "reasoning": "I found '[exact phrase from document]' in the content, which matches the [CODE] document form. I chose [Subject] because [reason].", "confidence": 8, "detectedType": "CODE", "suggestedSubject": "detected subject in PascalCase"}}"""
 
         if content_type == "image":
             # Image analysis with Gemini via OpenRouter
