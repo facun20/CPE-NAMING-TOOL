@@ -8,7 +8,7 @@ from datetime import datetime
 from io import BytesIO
 
 # OpenRouter API key for team use (Gemini via OpenRouter)
-OPENROUTER_API_KEY = "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"
+OPENROUTER_API_KEY = "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"
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1/chat/completions"
 GEMINI_MODEL = "google/gemini-2.5-flash"
 
