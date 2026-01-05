@@ -357,42 +357,80 @@ def analyze_with_claude(api_key: str, content: str, file_name: str, content_type
             ext = "pdf" if is_pdf else file_name.split('.')[-1] if '.' in file_name else "jpg"
 
             if is_pdf:
-                # PDF rendered as image - use full document analysis prompt with OCR
-                image_prompt = f"""You are a file naming expert for UBC CPE. This is a PDF document rendered as an image - please READ ALL TEXT visible in the document.
-
-IMPORTANT: Use your vision/OCR capability to read all text in this document image carefully.
+                # PDF rendered as image - Claude analysis with OCR
+                image_prompt = f"""You are a file naming expert for UBC CPE (Continuing Professional Education). READ ALL TEXT in this PDF document image carefully.
 
 Current filename: {file_name}
+Today's date: {today}
 
-=== CRITICAL: DOCUMENT FORM DETECTION ===
-FIRST, look for these EXACT phrases/keywords in the document. If found, you MUST use the corresponding code:
+=== STEP 1: EXTRACT ALL AVAILABLE FIELDS ===
 
-LETTERS & CERTIFICATES (check these first - they are specific):
-- "Letter of Proficiency" or "Proficiency Letter" → USE LPR
-- "Letter of Completion" or "Completion Letter" → USE LCO
-- "Letter of Attendance" or "Attendance Letter" → USE LAT
-- "Letter of Participation" or "Participation Letter" → USE LPA
-- "Non-Credit Certificate" → USE NCC
-- "Non-Credit MicroCertificate" or "MicroCertificate" → USE NCM
+1. FACULTY-SCHOOL (use dash between Faculty and School):
+   UBC Okanagan Faculties & Schools - use these abbreviations:
+   - "Irving K. Barber Faculty of Arts and Social Sciences" → IKBASS
+   - "Irving K. Barber Faculty of Science" → IKBFOS (or IKB-FOS if with school)
+   - "Faculty of Creative and Critical Studies" → FCCS
+   - "Okanagan School of Education" → OSE
+   - "Faculty of Applied Science" / "School of Engineering" → APSC-SoE
+   - "Faculty of Health and Social Development" → FHSD
+     - with "School of Nursing" → FHSD-SoN
+     - with "School of Social Work" → FHSD-SSW
+     - with "School of Health and Exercise Sciences" → FHSD-SHES
+   - "Faculty of Management" → FoM
+   - "Faculty of Medicine" → MED
+   - "College of Graduate Studies" → CoGS
 
-COMMON DOCUMENT TYPES:
-- "Agenda" → AGD | "Agreement" → AGR | "Announcement" → ANN
-- "Budget" → BGT | "Contract" → CON | "Form" → FRM
-- "Guidelines"/"Guide" → GUI | "Instructions" → INS | "Invoice" → INV
-- "Letter" (general) → LTR | "Minutes" → MIN | "Manual" → MNL
-- "Plan" → PLN | "Policy" → POL | "Procedure"/"SOP" → PRC
-- "Proposal" → PRO | "Presentation"/"Slides" → PRS | "Report" → RPT
-- "Schedule" → SCH | "Summary" → SUM | "Template" → TEM
+   FORMAT: Faculty-School with dash (e.g., FHSD-SoN, APSC-SoE)
+   If only Faculty found (no specific school), just use Faculty code (e.g., FCCS)
 
-NAMING FORMAT: Subject_DocumentForm_{today}_Rev0.pdf
+2. COURSE CODE - Four digits + dash + four digits (e.g., 0386-0001)
+   Look for course numbers, section codes
 
-In your reasoning:
-1. Quote the EXACT text you see that identifies the document type
-2. Explain why you chose that document form code
-3. Describe what subject/topic the document covers
+3. TERM OFFERED - Format: YYYYST (Year + Session + Term)
+   - Session: W = Winter (Sept-Apr), S = Summer (May-Aug)
+   - Term: 1 or 2
+   - Sept-Dec → WT1 | Jan-Apr → WT2 | May-Jun → ST1 | Jul-Aug → ST2
+   - Example: "December 2025" → 2025WT1
+   - Example: "March 2026" → 2025WT2 (still Winter session)
 
-Respond with ONLY a JSON object:
-{{"suggestedName": "Subject_CODE_{today}_Rev0.pdf", "reasoning": "I can see '[exact text from document]' which indicates this is a [type]. The subject is [topic] because [reason].", "confidence": 9, "detectedType": "CODE", "suggestedSubject": "SubjectInPascalCase"}}"""
+4. PROJECT/ACCOUNT CODE - Project numbers, grant codes (e.g., CPE, PROJ2024)
+
+5. SUBJECT - Main topic in PascalCase, no spaces (e.g., WildlandFireEcology)
+
+6. DOCUMENT FORM codes:
+   LETTERS & CERTIFICATES:
+   - "Letter of Proficiency" → LPR | "Letter of Completion" → LCO
+   - "Letter of Attendance" → LAT | "Letter of Participation" → LPA
+   - "Non-Credit Certificate" → NCC | "MicroCertificate" → NCM
+
+   COMMON TYPES:
+   - Agenda → AGD | Agreement → AGR | Budget → BGT | Contract → CON
+   - Form → FRM | Guidelines/Guide → GUI | Instructions → INS | Invoice → INV
+   - Letter (general) → LTR | Minutes → MIN | Manual → MNL | Plan → PLN
+   - Policy → POL | Procedure/SOP → PRC | Proposal → PRO | Presentation → PRS
+   - Report → RPT | Schedule → SCH | Template → TEM | Summary → SUM
+
+7. REVISION STATUS:
+   - Draft: RevA, RevB, RevC (letters for drafts)
+   - Final: Rev0 (first final), Rev1, Rev2 (subsequent finals)
+   - Draft after final: Rev0A, Rev0B (number + letter)
+
+=== STEP 2: CHOOSE FORMAT ===
+
+COURSE FORMAT (Faculty + Course content):
+Faculty-School_CourseCode_TermOffered_DocumentForm_Date_RevisionStatus.ext
+Example: FHSD-SoN_0386-0001_2024WT2_TEM_2025-01-10_Rev0.pptx
+
+ADVANCED FORMAT (Project code found):
+ProjectCode_Subject_DocumentForm_Date_RevisionStatus.ext
+Example: CPE_RecordsManagement_POL_2025-01-20_Rev0.pdf
+
+BASIC FORMAT (minimal info):
+Subject_Date_RevisionStatus.ext
+Example: NamingConventions_2025-03-11_RevA.docx
+
+=== STEP 3: RESPOND WITH JSON (no markdown) ===
+{{"suggestedName": "GeneratedFilename.pdf", "formatUsed": "course|advanced|basic", "extractedFields": {{"facultySchool": "FHSD-SoN or null", "courseCode": "0386-0001 or null", "term": "2024WT2 or null", "projectCode": "CPE or null", "subject": "SubjectInPascalCase", "documentForm": "CODE", "date": "YYYY-MM-DD", "revision": "Rev0"}}, "reasoning": "I found [text]. Faculty: [X]. School: [X]. Term: [X]. Document type: [X].", "confidence": 9}}"""
             else:
                 # Actual image file (photo, screenshot, diagram)
                 image_prompt = f"""I need help creating a CPE-compliant filename for this image.
@@ -656,42 +694,80 @@ Respond with ONLY a JSON object in this exact format (no markdown, no code block
             ext = "pdf" if is_pdf else file_name.split('.')[-1] if '.' in file_name else "jpg"
 
             if is_pdf:
-                # PDF rendered as image - use full document analysis prompt with OCR
-                image_prompt = f"""You are a file naming expert for UBC CPE. This is a PDF document rendered as an image - please READ ALL TEXT visible in the document.
-
-IMPORTANT: Use your vision/OCR capability to read all text in this document image carefully.
+                # PDF rendered as image - Gemini analysis with OCR
+                image_prompt = f"""You are a file naming expert for UBC CPE (Continuing Professional Education). READ ALL TEXT in this PDF document image carefully.
 
 Current filename: {file_name}
+Today's date: {today}
 
-=== CRITICAL: DOCUMENT FORM DETECTION ===
-FIRST, look for these EXACT phrases/keywords in the document. If found, you MUST use the corresponding code:
+=== STEP 1: EXTRACT ALL AVAILABLE FIELDS ===
 
-LETTERS & CERTIFICATES (check these first - they are specific):
-- "Letter of Proficiency" or "Proficiency Letter" → USE LPR
-- "Letter of Completion" or "Completion Letter" → USE LCO
-- "Letter of Attendance" or "Attendance Letter" → USE LAT
-- "Letter of Participation" or "Participation Letter" → USE LPA
-- "Non-Credit Certificate" → USE NCC
-- "Non-Credit MicroCertificate" or "MicroCertificate" → USE NCM
+1. FACULTY-SCHOOL (use dash between Faculty and School):
+   UBC Okanagan Faculties & Schools - use these abbreviations:
+   - "Irving K. Barber Faculty of Arts and Social Sciences" → IKBASS
+   - "Irving K. Barber Faculty of Science" → IKBFOS (or IKB-FOS if with school)
+   - "Faculty of Creative and Critical Studies" → FCCS
+   - "Okanagan School of Education" → OSE
+   - "Faculty of Applied Science" / "School of Engineering" → APSC-SoE
+   - "Faculty of Health and Social Development" → FHSD
+     - with "School of Nursing" → FHSD-SoN
+     - with "School of Social Work" → FHSD-SSW
+     - with "School of Health and Exercise Sciences" → FHSD-SHES
+   - "Faculty of Management" → FoM
+   - "Faculty of Medicine" → MED
+   - "College of Graduate Studies" → CoGS
 
-COMMON DOCUMENT TYPES:
-- "Agenda" → AGD | "Agreement" → AGR | "Announcement" → ANN
-- "Budget" → BGT | "Contract" → CON | "Form" → FRM
-- "Guidelines"/"Guide" → GUI | "Instructions" → INS | "Invoice" → INV
-- "Letter" (general) → LTR | "Minutes" → MIN | "Manual" → MNL
-- "Plan" → PLN | "Policy" → POL | "Procedure"/"SOP" → PRC
-- "Proposal" → PRO | "Presentation"/"Slides" → PRS | "Report" → RPT
-- "Schedule" → SCH | "Summary" → SUM | "Template" → TEM
+   FORMAT: Faculty-School with dash (e.g., FHSD-SoN, APSC-SoE)
+   If only Faculty found (no specific school), just use Faculty code (e.g., FCCS)
 
-NAMING FORMAT: Subject_DocumentForm_{today}_Rev0.pdf
+2. COURSE CODE - Four digits + dash + four digits (e.g., 0386-0001)
+   Look for course numbers, section codes
 
-In your reasoning:
-1. Quote the EXACT text you see that identifies the document type
-2. Explain why you chose that document form code
-3. Describe what subject/topic the document covers
+3. TERM OFFERED - Format: YYYYST (Year + Session + Term)
+   - Session: W = Winter (Sept-Apr), S = Summer (May-Aug)
+   - Term: 1 or 2
+   - Sept-Dec → WT1 | Jan-Apr → WT2 | May-Jun → ST1 | Jul-Aug → ST2
+   - Example: "December 2025" → 2025WT1
+   - Example: "March 2026" → 2025WT2 (still Winter session)
 
-Respond with ONLY a JSON object (no markdown, no code blocks):
-{{"suggestedName": "Subject_CODE_{today}_Rev0.pdf", "reasoning": "I can see '[exact text from document]' which indicates this is a [type]. The subject is [topic] because [reason].", "confidence": 9, "detectedType": "CODE", "suggestedSubject": "SubjectInPascalCase"}}"""
+4. PROJECT/ACCOUNT CODE - Project numbers, grant codes (e.g., CPE, PROJ2024)
+
+5. SUBJECT - Main topic in PascalCase, no spaces (e.g., WildlandFireEcology)
+
+6. DOCUMENT FORM codes:
+   LETTERS & CERTIFICATES:
+   - "Letter of Proficiency" → LPR | "Letter of Completion" → LCO
+   - "Letter of Attendance" → LAT | "Letter of Participation" → LPA
+   - "Non-Credit Certificate" → NCC | "MicroCertificate" → NCM
+
+   COMMON TYPES:
+   - Agenda → AGD | Agreement → AGR | Budget → BGT | Contract → CON
+   - Form → FRM | Guidelines/Guide → GUI | Instructions → INS | Invoice → INV
+   - Letter (general) → LTR | Minutes → MIN | Manual → MNL | Plan → PLN
+   - Policy → POL | Procedure/SOP → PRC | Proposal → PRO | Presentation → PRS
+   - Report → RPT | Schedule → SCH | Template → TEM | Summary → SUM
+
+7. REVISION STATUS:
+   - Draft: RevA, RevB, RevC (letters for drafts)
+   - Final: Rev0 (first final), Rev1, Rev2 (subsequent finals)
+   - Draft after final: Rev0A, Rev0B (number + letter)
+
+=== STEP 2: CHOOSE FORMAT ===
+
+COURSE FORMAT (Faculty + Course content):
+Faculty-School_CourseCode_TermOffered_DocumentForm_Date_RevisionStatus.ext
+Example: FHSD-SoN_0386-0001_2024WT2_TEM_2025-01-10_Rev0.pptx
+
+ADVANCED FORMAT (Project code found):
+ProjectCode_Subject_DocumentForm_Date_RevisionStatus.ext
+Example: CPE_RecordsManagement_POL_2025-01-20_Rev0.pdf
+
+BASIC FORMAT (minimal info):
+Subject_Date_RevisionStatus.ext
+Example: NamingConventions_2025-03-11_RevA.docx
+
+=== STEP 3: RESPOND WITH JSON (no markdown, no code blocks) ===
+{{"suggestedName": "GeneratedFilename.pdf", "formatUsed": "course|advanced|basic", "extractedFields": {{"facultySchool": "FHSD-SoN or null", "courseCode": "0386-0001 or null", "term": "2024WT2 or null", "projectCode": "CPE or null", "subject": "SubjectInPascalCase", "documentForm": "CODE", "date": "YYYY-MM-DD", "revision": "Rev0"}}, "reasoning": "I found [text]. Faculty: [X]. School: [X]. Term: [X]. Document type: [X].", "confidence": 9}}"""
             else:
                 # Actual image file (photo, screenshot, diagram)
                 image_prompt = f"""I need help creating a CPE-compliant filename for this image.
@@ -1103,15 +1179,55 @@ with tab2:
                     for result in results:
                         if result.get("success"):
                             analysis = result["analysis"]
+
+                            # Get format used and extracted fields if available
+                            format_used = analysis.get('formatUsed', 'basic')
+                            extracted = analysis.get('extractedFields', {})
+
+                            format_label = {
+                                'course': '📚 Course Format',
+                                'advanced': '📋 Advanced Format',
+                                'basic': '📄 Basic Format'
+                            }.get(format_used, '📄 Basic Format')
+
                             st.markdown(f"""
                             <div class="file-suggestion">
                                 <h4>📄 {result['file']}</h4>
                                 <p><strong>Suggested Name:</strong> <code>{analysis['suggestedName']}</code></p>
-                                <p><strong>Reasoning:</strong> {analysis['reasoning']}</p>
-                                <p><strong>Confidence:</strong> {analysis.get('confidence', 'N/A')}/10</p>
-                                <p><strong>Detected Type:</strong> {analysis.get('detectedType', 'N/A')}</p>
+                                <p><strong>Format Used:</strong> {format_label}</p>
                             </div>
                             """, unsafe_allow_html=True)
+
+                            # Show extracted fields if available
+                            if extracted:
+                                with st.expander("📋 Extracted Fields", expanded=True):
+                                    cols = st.columns(3)
+                                    with cols[0]:
+                                        # Check for facultySchool (new format) or faculty (old format)
+                                        faculty_val = extracted.get('facultySchool') or extracted.get('faculty')
+                                        if faculty_val:
+                                            st.markdown(f"**Faculty-School:** {faculty_val}")
+                                        if extracted.get('courseCode'):
+                                            st.markdown(f"**Course:** {extracted['courseCode']}")
+                                        if extracted.get('term'):
+                                            st.markdown(f"**Term:** {extracted['term']}")
+                                    with cols[1]:
+                                        if extracted.get('subject'):
+                                            st.markdown(f"**Subject:** {extracted['subject']}")
+                                        if extracted.get('documentForm'):
+                                            st.markdown(f"**Doc Type:** {extracted['documentForm']}")
+                                        if extracted.get('projectCode'):
+                                            st.markdown(f"**Project:** {extracted['projectCode']}")
+                                    with cols[2]:
+                                        if extracted.get('date'):
+                                            st.markdown(f"**Date:** {extracted['date']}")
+                                        if extracted.get('revision'):
+                                            st.markdown(f"**Revision:** {extracted['revision']}")
+
+                            # Show reasoning
+                            with st.expander("💭 AI Reasoning"):
+                                st.write(analysis.get('reasoning', 'No reasoning provided'))
+                                st.write(f"**Confidence:** {analysis.get('confidence', 'N/A')}/10")
 
                             # Copy button
                             st.text_input(
@@ -1119,6 +1235,8 @@ with tab2:
                                 value=analysis['suggestedName'],
                                 key=f"copy_{result['file']}"
                             )
+
+                            st.divider()
                         else:
                             st.error(f"❌ **{result['file']}**: {result.get('error', 'Unknown error')}")
         else:
