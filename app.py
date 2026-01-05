@@ -12,7 +12,13 @@ OPENROUTER_API_KEY = "sk-or-v1-c439063a971ade65ac492ba44fe2fca1fb3142a3519b2af81
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1/chat/completions"
 GEMINI_MODEL = "google/gemini-2.5-flash"
 
-# PDF parsing
+# PDF parsing and rendering
+try:
+    import fitz  # PyMuPDF - for PDF to image conversion (OCR support)
+    PYMUPDF_AVAILABLE = True
+except ImportError:
+    PYMUPDF_AVAILABLE = False
+
 try:
     from PyPDF2 import PdfReader
     PDF_AVAILABLE = True
@@ -224,8 +230,40 @@ HELP_CONTENT = {
 }
 
 
+def pdf_to_image(file_bytes: bytes) -> str:
+    """Convert first page of PDF to base64 image for AI vision/OCR.
+
+    Returns base64 data URI string for image, or None if conversion fails.
+    """
+    if not PYMUPDF_AVAILABLE:
+        return None
+
+    try:
+        # Open PDF from bytes
+        pdf_doc = fitz.open(stream=file_bytes, filetype="pdf")
+
+        # Get first page (most important for document identification)
+        page = pdf_doc[0]
+
+        # Render page to image at 150 DPI (good balance of quality vs size)
+        mat = fitz.Matrix(150/72, 150/72)  # 150 DPI
+        pix = page.get_pixmap(matrix=mat)
+
+        # Convert to PNG bytes
+        img_bytes = pix.tobytes("png")
+
+        # Encode as base64
+        base64_data = base64.b64encode(img_bytes).decode('utf-8')
+
+        pdf_doc.close()
+
+        return f"data:image/png;base64,{base64_data}"
+    except Exception as e:
+        return None
+
+
 def read_pdf_content(file_bytes: bytes) -> str:
-    """Extract text from PDF file."""
+    """Extract text from PDF file (fallback when image conversion not available)."""
     if not PDF_AVAILABLE:
         return "PDF parsing not available"
 
@@ -272,11 +310,20 @@ def read_xlsx_content(file_bytes: bytes) -> str:
 
 
 def read_file_content(uploaded_file) -> tuple:
-    """Read content from uploaded file. Returns (content, content_type)."""
+    """Read content from uploaded file. Returns (content, content_type).
+
+    For PDFs: Converts to image for AI vision/OCR (much better text detection).
+    Falls back to text extraction if image conversion unavailable.
+    """
     file_bytes = uploaded_file.read()
     file_name = uploaded_file.name.lower()
 
     if file_name.endswith('.pdf'):
+        # Try to convert PDF to image for AI vision/OCR (best accuracy)
+        pdf_image = pdf_to_image(file_bytes)
+        if pdf_image:
+            return pdf_image, "image"
+        # Fallback to text extraction if PyMuPDF not available
         return read_pdf_content(file_bytes), "text"
     elif file_name.endswith('.docx'):
         return read_docx_content(file_bytes), "text"
@@ -305,19 +352,52 @@ def analyze_with_claude(api_key: str, content: str, file_name: str, content_type
             mime_type = content.split(';')[0].replace('data:', '')
             base64_data = content.split(',')[1]
 
-            message = client.messages.create(
-                model="claude-sonnet-4-20250514",
-                max_tokens=1000,
-                messages=[{
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": f"""I need help creating a CPE-compliant filename for this image.
+            # Determine if this is likely a PDF (rendered as image) or actual image
+            is_pdf = file_name.lower().endswith('.pdf')
+            ext = "pdf" if is_pdf else file_name.split('.')[-1] if '.' in file_name else "jpg"
+
+            if is_pdf:
+                # PDF rendered as image - use full document analysis prompt with OCR
+                image_prompt = f"""You are a file naming expert for UBC CPE. This is a PDF document rendered as an image - please READ ALL TEXT visible in the document.
+
+IMPORTANT: Use your vision/OCR capability to read all text in this document image carefully.
+
+Current filename: {file_name}
+
+=== CRITICAL: DOCUMENT FORM DETECTION ===
+FIRST, look for these EXACT phrases/keywords in the document. If found, you MUST use the corresponding code:
+
+LETTERS & CERTIFICATES (check these first - they are specific):
+- "Letter of Proficiency" or "Proficiency Letter" → USE LPR
+- "Letter of Completion" or "Completion Letter" → USE LCO
+- "Letter of Attendance" or "Attendance Letter" → USE LAT
+- "Letter of Participation" or "Participation Letter" → USE LPA
+- "Non-Credit Certificate" → USE NCC
+- "Non-Credit MicroCertificate" or "MicroCertificate" → USE NCM
+
+COMMON DOCUMENT TYPES:
+- "Agenda" → AGD | "Agreement" → AGR | "Announcement" → ANN
+- "Budget" → BGT | "Contract" → CON | "Form" → FRM
+- "Guidelines"/"Guide" → GUI | "Instructions" → INS | "Invoice" → INV
+- "Letter" (general) → LTR | "Minutes" → MIN | "Manual" → MNL
+- "Plan" → PLN | "Policy" → POL | "Procedure"/"SOP" → PRC
+- "Proposal" → PRO | "Presentation"/"Slides" → PRS | "Report" → RPT
+- "Schedule" → SCH | "Summary" → SUM | "Template" → TEM
+
+NAMING FORMAT: Subject_DocumentForm_{today}_Rev0.pdf
+
+In your reasoning:
+1. Quote the EXACT text you see that identifies the document type
+2. Explain why you chose that document form code
+3. Describe what subject/topic the document covers
+
+Respond with ONLY a JSON object:
+{{"suggestedName": "Subject_CODE_{today}_Rev0.pdf", "reasoning": "I can see '[exact text from document]' which indicates this is a [type]. The subject is [topic] because [reason].", "confidence": 9, "detectedType": "CODE", "suggestedSubject": "SubjectInPascalCase"}}"""
+            else:
+                # Actual image file (photo, screenshot, diagram)
+                image_prompt = f"""I need help creating a CPE-compliant filename for this image.
 
 IMPORTANT: First, carefully analyze what is shown in this image. Describe what you see in detail.
-
-Based on what you observe, suggest an appropriate filename that accurately reflects the actual content.
 
 Current filename: {file_name}
 
@@ -327,20 +407,18 @@ Key elements for the filename:
 - Date: Use today's date {today} if no date is visible
 - Revision: Use 'Rev0' for final version
 
-In your reasoning, explain:
-1. What you can see in the image (describe the visual content)
-2. Why you chose the specific Subject name based on the image content
-3. Why you selected IMG, SCR, or DIA as the document form
-4. How the CPE naming convention applies to this image
-
 Respond with ONLY a JSON object:
-{{
-    "suggestedName": "ActualContentDescription_IMG_{today}_Rev0.jpg",
-    "reasoning": "Detailed explanation: I can see [description]. I chose the subject [Subject] because [reason]. I used IMG/SCR/DIA because [reason]. This follows CPE naming convention by [explanation].",
-    "confidence": 8,
-    "detectedType": "IMG",
-    "suggestedSubject": "SpecificContentInPascalCase"
-}}"""
+{{"suggestedName": "ContentDescription_IMG_{today}_Rev0.{ext}", "reasoning": "I can see [description]. I chose [Subject] because [reason]. I used IMG/SCR/DIA because [reason].", "confidence": 8, "detectedType": "IMG", "suggestedSubject": "SpecificContentInPascalCase"}}"""
+
+            message = client.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=1000,
+                messages=[{
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": image_prompt
                         },
                         {
                             "type": "image",
@@ -573,11 +651,52 @@ Respond with ONLY a JSON object in this exact format (no markdown, no code block
             mime_type = content.split(';')[0].replace('data:', '')
             base64_data = content.split(',')[1]
 
-            image_prompt = f"""I need help creating a CPE-compliant filename for this image.
+            # Determine if this is likely a PDF (rendered as image) or actual image
+            is_pdf = file_name.lower().endswith('.pdf')
+            ext = "pdf" if is_pdf else file_name.split('.')[-1] if '.' in file_name else "jpg"
+
+            if is_pdf:
+                # PDF rendered as image - use full document analysis prompt with OCR
+                image_prompt = f"""You are a file naming expert for UBC CPE. This is a PDF document rendered as an image - please READ ALL TEXT visible in the document.
+
+IMPORTANT: Use your vision/OCR capability to read all text in this document image carefully.
+
+Current filename: {file_name}
+
+=== CRITICAL: DOCUMENT FORM DETECTION ===
+FIRST, look for these EXACT phrases/keywords in the document. If found, you MUST use the corresponding code:
+
+LETTERS & CERTIFICATES (check these first - they are specific):
+- "Letter of Proficiency" or "Proficiency Letter" → USE LPR
+- "Letter of Completion" or "Completion Letter" → USE LCO
+- "Letter of Attendance" or "Attendance Letter" → USE LAT
+- "Letter of Participation" or "Participation Letter" → USE LPA
+- "Non-Credit Certificate" → USE NCC
+- "Non-Credit MicroCertificate" or "MicroCertificate" → USE NCM
+
+COMMON DOCUMENT TYPES:
+- "Agenda" → AGD | "Agreement" → AGR | "Announcement" → ANN
+- "Budget" → BGT | "Contract" → CON | "Form" → FRM
+- "Guidelines"/"Guide" → GUI | "Instructions" → INS | "Invoice" → INV
+- "Letter" (general) → LTR | "Minutes" → MIN | "Manual" → MNL
+- "Plan" → PLN | "Policy" → POL | "Procedure"/"SOP" → PRC
+- "Proposal" → PRO | "Presentation"/"Slides" → PRS | "Report" → RPT
+- "Schedule" → SCH | "Summary" → SUM | "Template" → TEM
+
+NAMING FORMAT: Subject_DocumentForm_{today}_Rev0.pdf
+
+In your reasoning:
+1. Quote the EXACT text you see that identifies the document type
+2. Explain why you chose that document form code
+3. Describe what subject/topic the document covers
+
+Respond with ONLY a JSON object (no markdown, no code blocks):
+{{"suggestedName": "Subject_CODE_{today}_Rev0.pdf", "reasoning": "I can see '[exact text from document]' which indicates this is a [type]. The subject is [topic] because [reason].", "confidence": 9, "detectedType": "CODE", "suggestedSubject": "SubjectInPascalCase"}}"""
+            else:
+                # Actual image file (photo, screenshot, diagram)
+                image_prompt = f"""I need help creating a CPE-compliant filename for this image.
 
 IMPORTANT: First, carefully analyze what is shown in this image. Describe what you see in detail.
-
-Based on what you observe, suggest an appropriate filename that accurately reflects the actual content.
 
 Current filename: {file_name}
 
@@ -587,14 +706,8 @@ Key elements for the filename:
 - Date: Use today's date {today} if no date is visible
 - Revision: Use 'Rev0' for final version
 
-In your reasoning, explain:
-1. What you can see in the image (describe the visual content)
-2. Why you chose the specific Subject name based on the image content
-3. Why you selected IMG, SCR, or DIA as the document form
-4. How the CPE naming convention applies to this image
-
 Respond with ONLY a JSON object (no markdown, no code blocks):
-{{"suggestedName": "ActualContentDescription_IMG_{today}_Rev0.jpg", "reasoning": "Detailed explanation: I can see [description]. I chose the subject [Subject] because [reason]. I used IMG/SCR/DIA because [reason]. This follows CPE naming convention by [explanation].", "confidence": 8, "detectedType": "IMG", "suggestedSubject": "SpecificContentInPascalCase"}}"""
+{{"suggestedName": "ContentDescription_IMG_{today}_Rev0.{ext}", "reasoning": "I can see [description]. I chose [Subject] because [reason]. I used IMG/SCR/DIA because [reason].", "confidence": 8, "detectedType": "IMG", "suggestedSubject": "SpecificContentInPascalCase"}}"""
 
             # OpenRouter request with image
             messages = [{
