@@ -291,20 +291,34 @@ def read_docx_content(file_bytes: bytes) -> str:
 
 
 def read_xlsx_content(file_bytes: bytes) -> str:
-    """Extract text from Excel file."""
+    """Extract text from Excel file with better structure preservation."""
     if not XLSX_AVAILABLE:
         return "Excel parsing not available"
 
     try:
         workbook = openpyxl.load_workbook(BytesIO(file_bytes), data_only=True)
-        text = ""
-        for sheet_name in workbook.sheetnames:
+        text = "=== EXCEL FILE CONTENT ===\n"
+
+        for sheet_name in workbook.sheetnames[:3]:  # Limit to first 3 sheets
             sheet = workbook[sheet_name]
-            text += f"\nSheet: {sheet_name}\n"
-            for row in sheet.iter_rows(max_row=50, values_only=True):
-                row_text = " | ".join([str(cell) if cell else "" for cell in row])
-                text += row_text + "\n"
-        return text[:4000]
+            text += f"\n--- Sheet: {sheet_name} ---\n"
+
+            # Get actual used range
+            max_row = min(sheet.max_row or 1, 100)  # Limit to 100 rows
+            max_col = min(sheet.max_column or 1, 20)  # Limit to 20 columns
+
+            row_count = 0
+            for row in sheet.iter_rows(min_row=1, max_row=max_row, max_col=max_col, values_only=True):
+                # Skip completely empty rows
+                if any(cell for cell in row):
+                    row_text = " | ".join([str(cell)[:50] if cell else "" for cell in row])
+                    text += row_text.strip() + "\n"
+                    row_count += 1
+                    if row_count >= 75:  # Limit rows per sheet
+                        text += "... (more rows)\n"
+                        break
+
+        return text[:6000]  # Allow more content for Excel
     except Exception as e:
         return f"Could not extract Excel text: {str(e)}"
 
@@ -471,96 +485,63 @@ Respond with ONLY a JSON object:
             )
         else:
             # Text document analysis - send full content for best analysis
-            document_content = content[:4000]  # Limit to 4000 chars for API
+            document_content = content[:6000]  # Allow more for Excel/text files
 
             message = client.messages.create(
                 model="claude-sonnet-4-20250514",
                 max_tokens=1000,
                 messages=[{
                     "role": "user",
-                    "content": f"""You are a file naming expert for the University of British Columbia's Continuing Professional Education (CPE) department.
-
-Analyze this file and suggest a CPE-compliant filename following these conventions:
-
-BASIC FORMAT: Subject_Date_RevisionStatus.ext
-ADVANCED FORMAT: ProjectCode_Subject_DocumentForm_Date_RevisionStatus.ext
-COURSE FORMAT: FacultySchool_CourseCode_Term_DocumentForm_Date_RevisionStatus.ext
-
-=== CRITICAL: DOCUMENT FORM DETECTION ===
-FIRST, scan the document content for these EXACT phrases or keywords. If found, you MUST use the corresponding code:
-
-LETTERS & CERTIFICATES (check these first - they are specific):
-- "Letter of Proficiency" or "Proficiency Letter" → USE LPR
-- "Letter of Completion" or "Completion Letter" → USE LCO
-- "Letter of Attendance" or "Attendance Letter" → USE LAT
-- "Letter of Participation" or "Participation Letter" → USE LPA
-- "Non-Credit Certificate" → USE NCC
-- "Non-Credit MicroCertificate" or "MicroCertificate" → USE NCM
-
-COMMON DOCUMENT TYPES:
-- "Agenda" (meeting agenda, event agenda) → USE AGD
-- "Agreement" (formal agreement, MOU) → USE AGR
-- "Announcement" → USE ANN
-- "Appendix" → USE APP
-- "Attendance" (attendance record/sheet) → USE ATD
-- "Budget" or "Course Budget" → USE BGT
-- "Briefing Note" or "Brief" → USE BRN
-- "Concept Paper" → USE CCP
-- "Contract" → USE CON
-- "Data Set" or "Dataset" → USE DAT
-- "Fact Sheet" → USE FCT
-- "Form" (application form, registration form) → USE FRM
-- "Grant" (grant application, grant proposal) → USE GRA
-- "Guidelines" or "Guide" → USE GUI
-- "Instructions" or "How to" → USE INS
-- "Interview" (interview questions, transcript) → USE INT
-- "Invoice" → USE INV
-- "Legal" (legal document, terms) → USE LGL
-- "Letter" (general letter, not specific type above) → USE LTR
-- "Minutes" (meeting minutes) → USE MIN
-- "Manual" (user manual, training manual) → USE MNL
-- "Plan" (project plan, work plan) → USE PLN
-- "Policy" → USE POL
-- "Procedure" or "SOP" → USE PRC
-- "Proposal" → USE PRO
-- "Presentation" or "Slides" → USE PRS
-- "Poster" → USE PST
-- "Report" (annual report, research report, brief) → USE RPT
-- "Review" → USE RVW
-- "Schedule" (course schedule, event schedule) → USE SCH
-- "Sample" → USE SMP
-- "Survey" (questionnaire) → USE SRY
-- "Summary" or "Executive Summary" → USE SUM
-- "Template" → USE TEM
-- "Timeline" → USE TML
-
-IMAGES:
-- Photos, pictures → USE IMG
-- Screenshots → USE SCR
-- Diagrams, flowcharts, charts → USE DIA
-
-REVISION STATUS:
-- A, B, C for drafts
-- 0 for first final version
-- 1, 2, 3+ for subsequent revisions
+                    "content": f"""You are a file naming expert for UBC CPE (Continuing Professional Education). Analyze this document and suggest a CPE-compliant filename.
 
 Current file: {file_name}
+Today's date: {today}
+
+=== STEP 1: CHECK FOR FACULTY-SCHOOL (STRICT MATCHING ONLY) ===
+ONLY use Faculty-School codes if you find EXACT matches to these UBC Okanagan names:
+- "Irving K. Barber Faculty of Arts and Social Sciences" → IKBASS
+- "Irving K. Barber Faculty of Science" → IKBFOS
+- "Faculty of Creative and Critical Studies" → FCCS
+- "Okanagan School of Education" → OSE
+- "Faculty of Applied Science" + "School of Engineering" → APSC-SoE
+- "Faculty of Health and Social Development" → FHSD
+  - + "School of Nursing" → FHSD-SoN
+  - + "School of Social Work" → FHSD-SSW
+- "Faculty of Management" → FoM
+- "Faculty of Medicine" → MED
+- "College of Graduate Studies" → CoGS
+
+⚠️ DO NOT invent Faculty-School codes! If you don't see these EXACT faculty names, set facultySchool to null.
+⚠️ "CPE", "ITAL", "55PLUS", course abbreviations, etc. are NOT Faculty-School codes!
+
+=== STEP 2: EXTRACT OTHER FIELDS ===
+- COURSE CODE: Four digits + dash + four digits (e.g., 0386-0001). Must be this exact format.
+- TERM: Format YYYYST (e.g., 2025WT1). Only if you see clear term/session info.
+- PROJECT CODE: Only if explicitly labeled (e.g., "Project: CPE", "Account: XYZ")
+- SUBJECT: Main topic in PascalCase (e.g., EnrollmentCount, ServiceDescriptions)
+- DOCUMENT FORM: Match keywords to codes:
+  - Report/Enrollment/Count/Chart → RPT | Survey/Analysis → SRY | Summary → SUM
+  - Letter of Proficiency → LPR | Letter of Completion → LCO
+  - Guidelines/Guide → GUI | Manual → MNL | Template → TEM | Schedule → SCH
+  - Budget → BGT | Invoice → INV | Contract → CON | Form → FRM
+- REVISION: RevA/B/C for drafts, Rev0 for first final, Rev1/2 for subsequent
+
+=== STEP 3: CHOOSE FORMAT ===
+COURSE FORMAT (ONLY if you found valid Faculty-School AND course content):
+Faculty-School_CourseCode_Term_DocumentForm_Date_Revision.ext
+
+ADVANCED FORMAT (if project code is explicitly present):
+ProjectCode_Subject_DocumentForm_Date_Revision.ext
+
+BASIC FORMAT (default - use this for most files):
+Subject_DocumentForm_Date_Revision.ext
+Example: EnrollmentCount_RPT_{today}_Rev0.xls
+
+=== STEP 4: RESPOND WITH JSON ===
 Content: {document_content}
 
-IMPORTANT INSTRUCTIONS:
-1. FIRST scan the content for any of the keywords/phrases above
-2. If you find a match, you MUST use that document form code
-3. In your reasoning, quote the exact text you found that matched
-4. Only if NO keywords match should you infer the document type from context
-
-Respond with ONLY a JSON object in this format:
-{{
-    "suggestedName": "RecommendedFileName_{today}_Rev0.pdf",
-    "reasoning": "I found '[exact phrase from document]' in the content, which matches the [CODE] document form. I chose [Subject] because [reason].",
-    "confidence": 8,
-    "detectedType": "CODE",
-    "suggestedSubject": "detected subject in PascalCase"
-}}"""
+Respond with ONLY this JSON (no markdown):
+{{"suggestedName": "Filename.ext", "formatUsed": "course|advanced|basic", "extractedFields": {{"facultySchool": "CODE or null", "courseCode": "XXXX-XXXX or null", "term": "YYYYST or null", "projectCode": "CODE or null", "subject": "SubjectPascalCase", "documentForm": "CODE", "date": "{today}", "revision": "Rev0"}}, "reasoning": "Explanation of what I found and why I chose each field.", "confidence": 8}}"""
                 }]
             )
 
@@ -607,82 +588,61 @@ def analyze_with_gemini(api_key: str, content: str, file_name: str, content_type
         today = datetime.now().strftime("%Y-%m-%d")
 
         # Build the prompt
-        base_prompt = f"""You are a file naming expert for the University of British Columbia's Continuing Professional Education (CPE) department.
-
-Analyze this file and suggest a CPE-compliant filename following these conventions:
-
-BASIC FORMAT: Subject_Date_RevisionStatus.ext
-ADVANCED FORMAT: ProjectCode_Subject_DocumentForm_Date_RevisionStatus.ext
-COURSE FORMAT: FacultySchool_CourseCode_Term_DocumentForm_Date_RevisionStatus.ext
-
-=== CRITICAL: DOCUMENT FORM DETECTION ===
-FIRST, scan the document content for these EXACT phrases or keywords. If found, you MUST use the corresponding code:
-
-LETTERS & CERTIFICATES (check these first - they are specific):
-- "Letter of Proficiency" or "Proficiency Letter" → USE LPR
-- "Letter of Completion" or "Completion Letter" → USE LCO
-- "Letter of Attendance" or "Attendance Letter" → USE LAT
-- "Letter of Participation" or "Participation Letter" → USE LPA
-- "Non-Credit Certificate" → USE NCC
-- "Non-Credit MicroCertificate" or "MicroCertificate" → USE NCM
-
-COMMON DOCUMENT TYPES:
-- "Agenda" (meeting agenda, event agenda) → USE AGD
-- "Agreement" (formal agreement, MOU) → USE AGR
-- "Announcement" → USE ANN
-- "Appendix" → USE APP
-- "Attendance" (attendance record/sheet) → USE ATD
-- "Budget" or "Course Budget" → USE BGT
-- "Briefing Note" or "Brief" → USE BRN
-- "Concept Paper" → USE CCP
-- "Contract" → USE CON
-- "Data Set" or "Dataset" → USE DAT
-- "Fact Sheet" → USE FCT
-- "Form" (application form, registration form) → USE FRM
-- "Grant" (grant application, grant proposal) → USE GRA
-- "Guidelines" or "Guide" → USE GUI
-- "Instructions" or "How to" → USE INS
-- "Interview" (interview questions, transcript) → USE INT
-- "Invoice" → USE INV
-- "Legal" (legal document, terms) → USE LGL
-- "Letter" (general letter, not specific type above) → USE LTR
-- "Minutes" (meeting minutes) → USE MIN
-- "Manual" (user manual, training manual) → USE MNL
-- "Plan" (project plan, work plan) → USE PLN
-- "Policy" → USE POL
-- "Procedure" or "SOP" → USE PRC
-- "Proposal" → USE PRO
-- "Presentation" or "Slides" → USE PRS
-- "Poster" → USE PST
-- "Report" (annual report, research report, brief) → USE RPT
-- "Review" → USE RVW
-- "Schedule" (course schedule, event schedule) → USE SCH
-- "Sample" → USE SMP
-- "Survey" (questionnaire) → USE SRY
-- "Summary" or "Executive Summary" → USE SUM
-- "Template" → USE TEM
-- "Timeline" → USE TML
-
-IMAGES:
-- Photos, pictures → USE IMG
-- Screenshots → USE SCR
-- Diagrams, flowcharts, charts → USE DIA
-
-REVISION STATUS:
-- A, B, C for drafts
-- 0 for first final version
-- 1, 2, 3+ for subsequent revisions
+        base_prompt = f"""You are a file naming expert for UBC CPE (Continuing Professional Education). Analyze this document and suggest a CPE-compliant filename.
 
 Current file: {file_name}
+Today's date: {today}
 
-IMPORTANT INSTRUCTIONS:
-1. FIRST scan the content for any of the keywords/phrases above
-2. If you find a match, you MUST use that document form code
-3. In your reasoning, quote the exact text you found that matched
-4. Only if NO keywords match should you infer the document type from context
+=== STEP 1: CHECK FOR FACULTY-SCHOOL (STRICT MATCHING ONLY) ===
+ONLY use Faculty-School codes if you find EXACT matches to these UBC Okanagan names:
+- "Irving K. Barber Faculty of Arts and Social Sciences" → IKBASS
+- "Irving K. Barber Faculty of Science" → IKBFOS
+- "Faculty of Creative and Critical Studies" → FCCS
+- "Okanagan School of Education" → OSE
+- "Faculty of Applied Science" + "School of Engineering" → APSC-SoE
+- "Faculty of Health and Social Development" → FHSD
+  - + "School of Nursing" → FHSD-SoN
+  - + "School of Social Work" → FHSD-SSW
+- "Faculty of Management" → FoM
+- "Faculty of Medicine" → MED
+- "College of Graduate Studies" → CoGS
 
-Respond with ONLY a JSON object in this exact format (no markdown, no code blocks):
-{{"suggestedName": "RecommendedFileName_{today}_Rev0.ext", "reasoning": "I found '[exact phrase from document]' in the content, which matches the [CODE] document form. I chose [Subject] because [reason].", "confidence": 8, "detectedType": "CODE", "suggestedSubject": "detected subject in PascalCase"}}"""
+⚠️ DO NOT invent Faculty-School codes! If you don't see these EXACT faculty names, set facultySchool to null.
+⚠️ "CPE", "ITAL", "55PLUS", course abbreviations, etc. are NOT Faculty-School codes!
+
+=== STEP 2: EXTRACT OTHER FIELDS ===
+- COURSE CODE: Four digits + dash + four digits (e.g., 0386-0001). Must be this exact format.
+- TERM: Format YYYYST (e.g., 2025WT1). Only if you see clear term/session info.
+- PROJECT CODE: Only if explicitly labeled (e.g., "Project: CPE", "Account: XYZ")
+- SUBJECT: Main topic in PascalCase (e.g., EnrollmentCount, ServiceDescriptions)
+- DOCUMENT FORM: Match keywords to codes:
+  LETTERS & CERTIFICATES:
+  - "Letter of Proficiency" → LPR | "Letter of Completion" → LCO
+  - "Letter of Attendance" → LAT | "Letter of Participation" → LPA
+
+  COMMON TYPES:
+  - Report/Count/Chart → RPT | Survey/Analysis → SRY | Summary → SUM
+  - Guidelines/Guide → GUI | Manual → MNL | Template → TEM | Schedule → SCH
+  - Budget → BGT | Invoice → INV | Contract → CON | Form → FRM
+  - Agenda → AGD | Minutes → MIN | Policy → POL | Procedure → PRC
+  - Presentation → PRS | Plan → PLN | Proposal → PRO
+  - Diagram/Chart → DIA | Screenshot → SCR | Image → IMG
+
+- REVISION: RevA/B/C for drafts, Rev0 for first final, Rev1/2 for subsequent
+
+=== STEP 3: CHOOSE FORMAT ===
+COURSE FORMAT (ONLY if you found valid Faculty-School AND course content):
+Faculty-School_CourseCode_Term_DocumentForm_Date_Revision.ext
+
+ADVANCED FORMAT (if project code is explicitly present):
+ProjectCode_Subject_DocumentForm_Date_Revision.ext
+
+BASIC FORMAT (default - use this for most files):
+Subject_DocumentForm_Date_Revision.ext
+Example: EnrollmentCount_RPT_{today}_Rev0.xls
+
+=== STEP 4: RESPOND WITH JSON (no markdown, no code blocks) ===
+{{"suggestedName": "Filename.ext", "formatUsed": "course|advanced|basic", "extractedFields": {{"facultySchool": "CODE or null", "courseCode": "XXXX-XXXX or null", "term": "YYYYST or null", "projectCode": "CODE or null", "subject": "SubjectPascalCase", "documentForm": "CODE", "date": "{today}", "revision": "Rev0"}}, "reasoning": "Explanation of what I found and why I chose each field.", "confidence": 8}}"""
 
         if content_type == "image":
             # Image analysis with Gemini via OpenRouter
