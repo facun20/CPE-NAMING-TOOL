@@ -409,7 +409,9 @@ Today's date: {today}
 
 4. PROJECT/ACCOUNT CODE - Project numbers, grant codes (e.g., CPE, PROJ2024)
 
-5. SUBJECT - Main topic in PascalCase, no spaces (e.g., WildlandFireEcology)
+5. SUBJECT - Use Title-Kebab-Case (e.g., Wildland-Fire-Ecology)
+   ⚠️ MAX 50 CHARACTERS! Truncate at word boundary if longer.
+   Example: "Foundations-For-A-Restorative-Approach-Health-Care" (50 chars max)
 
 6. DOCUMENT FORM codes:
    LETTERS & CERTIFICATES:
@@ -437,14 +439,14 @@ Example: FHSD-SoN_0386-0001_2024WT2_TEM_2025-01-10_Rev0.pptx
 
 ADVANCED FORMAT (Project code found):
 ProjectCode_Subject_DocumentForm_Date_RevisionStatus.ext
-Example: CPE_RecordsManagement_POL_2025-01-20_Rev0.pdf
+Example: CPE_Records-Management_POL_2025-01-20_Rev0.pdf
 
 BASIC FORMAT (minimal info):
-Subject_Date_RevisionStatus.ext
-Example: NamingConventions_2025-03-11_RevA.docx
+Subject_DocumentForm_Date_RevisionStatus.ext
+Example: Naming-Conventions_LPR_2025-03-11_RevA.docx
 
 === STEP 3: RESPOND WITH JSON (no markdown) ===
-{{"suggestedName": "GeneratedFilename.pdf", "formatUsed": "course|advanced|basic", "extractedFields": {{"facultySchool": "FHSD-SoN or null", "courseCode": "0386-0001 or null", "term": "2024WT2 or null", "projectCode": "CPE or null", "subject": "SubjectInPascalCase", "documentForm": "CODE", "date": "YYYY-MM-DD", "revision": "Rev0"}}, "reasoning": "I found [text]. Faculty: [X]. School: [X]. Term: [X]. Document type: [X].", "confidence": 9}}"""
+{{"suggestedName": "GeneratedFilename.pdf", "formatUsed": "course|advanced|basic", "extractedFields": {{"facultySchool": "FHSD-SoN or null", "courseCode": "0386-0001 or null", "term": "2024WT2 or null", "projectCode": "CPE or null", "subject": "Subject-In-Title-Kebab-Case", "documentForm": "CODE", "date": "YYYY-MM-DD", "revision": "Rev0"}}, "reasoning": "I found [text]. Faculty: [X]. School: [X]. Term: [X]. Document type: [X].", "confidence": 9}}"""
             else:
                 # Actual image file (photo, screenshot, diagram)
                 image_prompt = f"""I need help creating a CPE-compliant filename for this image.
@@ -454,13 +456,13 @@ IMPORTANT: First, carefully analyze what is shown in this image. Describe what y
 Current filename: {file_name}
 
 Key elements for the filename:
-- Subject (required): What is actually shown in the image (use PascalCase)
+- Subject (required): What is actually shown in the image. Use Title-Kebab-Case (e.g., Campus-Building). MAX 50 CHARACTERS.
 - Document Form: Use IMG for photos, SCR for screenshots, DIA for diagrams
 - Date: Use today's date {today} if no date is visible
 - Revision: Use 'Rev0' for final version
 
 Respond with ONLY a JSON object:
-{{"suggestedName": "ContentDescription_IMG_{today}_Rev0.{ext}", "reasoning": "I can see [description]. I chose [Subject] because [reason]. I used IMG/SCR/DIA because [reason].", "confidence": 8, "detectedType": "IMG", "suggestedSubject": "SpecificContentInPascalCase"}}"""
+{{"suggestedName": "Content-Description_IMG_{today}_Rev0.{ext}", "reasoning": "I can see [description]. I chose [Subject] because [reason]. I used IMG/SCR/DIA because [reason].", "confidence": 8, "detectedType": "IMG", "suggestedSubject": "Subject-In-Title-Kebab-Case"}}"""
 
             message = client.messages.create(
                 model="claude-sonnet-4-20250514",
@@ -518,7 +520,10 @@ ONLY use Faculty-School codes if you find EXACT matches to these UBC Okanagan na
 - COURSE CODE: Four digits + dash + four digits (e.g., 0386-0001). Must be this exact format.
 - TERM: Format YYYYST (e.g., 2025WT1). Only if you see clear term/session info.
 - PROJECT CODE: Only if explicitly labeled (e.g., "Project: CPE", "Account: XYZ")
-- SUBJECT: Main topic in PascalCase (e.g., EnrollmentCount, ServiceDescriptions)
+- SUBJECT: Use Title-Kebab-Case (e.g., Foundations-For-Restorative-Approach)
+  ⚠️ MAX 50 CHARACTERS for subject! Truncate at word boundary if longer.
+  Example: "Foundations For A Restorative Approach Health Care Harm And Wellbeing"
+  → Truncate to: "Foundations-For-A-Restorative-Approach-Health-Care" (50 chars)
 - DOCUMENT FORM: Match keywords to codes:
   - Report/Enrollment/Count/Chart → RPT | Survey/Analysis → SRY | Summary → SUM
   - Letter of Proficiency → LPR | Letter of Completion → LCO
@@ -535,13 +540,13 @@ ProjectCode_Subject_DocumentForm_Date_Revision.ext
 
 BASIC FORMAT (default - use this for most files):
 Subject_DocumentForm_Date_Revision.ext
-Example: EnrollmentCount_RPT_{today}_Rev0.xls
+Example: Enrollment-Count-Report_RPT_{today}_Rev0.xls
 
 === STEP 4: RESPOND WITH JSON ===
 Content: {document_content}
 
 Respond with ONLY this JSON (no markdown):
-{{"suggestedName": "Filename.ext", "formatUsed": "course|advanced|basic", "extractedFields": {{"facultySchool": "CODE or null", "courseCode": "XXXX-XXXX or null", "term": "YYYYST or null", "projectCode": "CODE or null", "subject": "SubjectPascalCase", "documentForm": "CODE", "date": "{today}", "revision": "Rev0"}}, "reasoning": "Explanation of what I found and why I chose each field.", "confidence": 8}}"""
+{{"suggestedName": "Filename.ext", "formatUsed": "course|advanced|basic", "extractedFields": {{"facultySchool": "CODE or null", "courseCode": "XXXX-XXXX or null", "term": "YYYYST or null", "projectCode": "CODE or null", "subject": "Subject-In-Title-Kebab-Case", "documentForm": "CODE", "date": "{today}", "revision": "Rev0"}}, "reasoning": "Explanation of what I found and why I chose each field.", "confidence": 8}}"""
                 }]
             )
 
@@ -614,7 +619,10 @@ ONLY use Faculty-School codes if you find EXACT matches to these UBC Okanagan na
 - COURSE CODE: Four digits + dash + four digits (e.g., 0386-0001). Must be this exact format.
 - TERM: Format YYYYST (e.g., 2025WT1). Only if you see clear term/session info.
 - PROJECT CODE: Only if explicitly labeled (e.g., "Project: CPE", "Account: XYZ")
-- SUBJECT: Main topic in PascalCase (e.g., EnrollmentCount, ServiceDescriptions)
+- SUBJECT: Use Title-Kebab-Case (e.g., Foundations-For-Restorative-Approach)
+  ⚠️ MAX 50 CHARACTERS for subject! Truncate at word boundary if longer.
+  Example: "Foundations For A Restorative Approach Health Care Harm And Wellbeing"
+  → Truncate to: "Foundations-For-A-Restorative-Approach-Health-Care" (50 chars)
 - DOCUMENT FORM: Match keywords to codes:
   LETTERS & CERTIFICATES:
   - "Letter of Proficiency" → LPR | "Letter of Completion" → LCO
@@ -639,10 +647,10 @@ ProjectCode_Subject_DocumentForm_Date_Revision.ext
 
 BASIC FORMAT (default - use this for most files):
 Subject_DocumentForm_Date_Revision.ext
-Example: EnrollmentCount_RPT_{today}_Rev0.xls
+Example: Enrollment-Count-Report_RPT_{today}_Rev0.xls
 
 === STEP 4: RESPOND WITH JSON (no markdown, no code blocks) ===
-{{"suggestedName": "Filename.ext", "formatUsed": "course|advanced|basic", "extractedFields": {{"facultySchool": "CODE or null", "courseCode": "XXXX-XXXX or null", "term": "YYYYST or null", "projectCode": "CODE or null", "subject": "SubjectPascalCase", "documentForm": "CODE", "date": "{today}", "revision": "Rev0"}}, "reasoning": "Explanation of what I found and why I chose each field.", "confidence": 8}}"""
+{{"suggestedName": "Filename.ext", "formatUsed": "course|advanced|basic", "extractedFields": {{"facultySchool": "CODE or null", "courseCode": "XXXX-XXXX or null", "term": "YYYYST or null", "projectCode": "CODE or null", "subject": "Subject-In-Title-Kebab-Case", "documentForm": "CODE", "date": "{today}", "revision": "Rev0"}}, "reasoning": "Explanation of what I found and why I chose each field.", "confidence": 8}}"""
 
         if content_type == "image":
             # Image analysis with Gemini via OpenRouter
@@ -692,7 +700,9 @@ Today's date: {today}
 
 4. PROJECT/ACCOUNT CODE - Project numbers, grant codes (e.g., CPE, PROJ2024)
 
-5. SUBJECT - Main topic in PascalCase, no spaces (e.g., WildlandFireEcology)
+5. SUBJECT - Use Title-Kebab-Case (e.g., Wildland-Fire-Ecology)
+   ⚠️ MAX 50 CHARACTERS! Truncate at word boundary if longer.
+   Example: "Foundations-For-A-Restorative-Approach-Health-Care" (50 chars max)
 
 6. DOCUMENT FORM codes:
    LETTERS & CERTIFICATES:
@@ -720,14 +730,14 @@ Example: FHSD-SoN_0386-0001_2024WT2_TEM_2025-01-10_Rev0.pptx
 
 ADVANCED FORMAT (Project code found):
 ProjectCode_Subject_DocumentForm_Date_RevisionStatus.ext
-Example: CPE_RecordsManagement_POL_2025-01-20_Rev0.pdf
+Example: CPE_Records-Management_POL_2025-01-20_Rev0.pdf
 
 BASIC FORMAT (minimal info):
-Subject_Date_RevisionStatus.ext
-Example: NamingConventions_2025-03-11_RevA.docx
+Subject_DocumentForm_Date_RevisionStatus.ext
+Example: Naming-Conventions_LPR_2025-03-11_RevA.docx
 
 === STEP 3: RESPOND WITH JSON (no markdown, no code blocks) ===
-{{"suggestedName": "GeneratedFilename.pdf", "formatUsed": "course|advanced|basic", "extractedFields": {{"facultySchool": "FHSD-SoN or null", "courseCode": "0386-0001 or null", "term": "2024WT2 or null", "projectCode": "CPE or null", "subject": "SubjectInPascalCase", "documentForm": "CODE", "date": "YYYY-MM-DD", "revision": "Rev0"}}, "reasoning": "I found [text]. Faculty: [X]. School: [X]. Term: [X]. Document type: [X].", "confidence": 9}}"""
+{{"suggestedName": "GeneratedFilename.pdf", "formatUsed": "course|advanced|basic", "extractedFields": {{"facultySchool": "FHSD-SoN or null", "courseCode": "0386-0001 or null", "term": "2024WT2 or null", "projectCode": "CPE or null", "subject": "Subject-In-Title-Kebab-Case", "documentForm": "CODE", "date": "YYYY-MM-DD", "revision": "Rev0"}}, "reasoning": "I found [text]. Faculty: [X]. School: [X]. Term: [X]. Document type: [X].", "confidence": 9}}"""
             else:
                 # Actual image file (photo, screenshot, diagram)
                 image_prompt = f"""I need help creating a CPE-compliant filename for this image.
@@ -737,13 +747,13 @@ IMPORTANT: First, carefully analyze what is shown in this image. Describe what y
 Current filename: {file_name}
 
 Key elements for the filename:
-- Subject (required): What is actually shown in the image (use PascalCase)
+- Subject (required): What is actually shown in the image. Use Title-Kebab-Case (e.g., Campus-Building). MAX 50 CHARACTERS.
 - Document Form: Use IMG for photos, SCR for screenshots, DIA for diagrams
 - Date: Use today's date {today} if no date is visible
 - Revision: Use 'Rev0' for final version
 
 Respond with ONLY a JSON object (no markdown, no code blocks):
-{{"suggestedName": "ContentDescription_IMG_{today}_Rev0.{ext}", "reasoning": "I can see [description]. I chose [Subject] because [reason]. I used IMG/SCR/DIA because [reason].", "confidence": 8, "detectedType": "IMG", "suggestedSubject": "SpecificContentInPascalCase"}}"""
+{{"suggestedName": "Content-Description_IMG_{today}_Rev0.{ext}", "reasoning": "I can see [description]. I chose [Subject] because [reason]. I used IMG/SCR/DIA because [reason].", "confidence": 8, "detectedType": "IMG", "suggestedSubject": "Subject-In-Title-Kebab-Case"}}"""
 
             # OpenRouter request with image
             messages = [{
