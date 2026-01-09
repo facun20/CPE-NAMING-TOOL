@@ -7,8 +7,7 @@ import json
 from datetime import datetime
 from io import BytesIO
 
-# OpenRouter API key for team use (Gemini via OpenRouter)
-OPENROUTER_API_KEY = "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"
+# OpenRouter API configuration (users provide their own API key)
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1/chat/completions"
 GEMINI_MODEL = "google/gemini-2.5-flash"
 
@@ -1050,10 +1049,22 @@ with tab2:
         if ai_provider == "gemini":
             st.success("Using Gemini 2.5 Flash via OpenRouter")
 
-            # API key is built-in via OpenRouter
-            api_key = OPENROUTER_API_KEY
+            # OpenRouter API Key input
+            api_key = st.text_input(
+                "OpenRouter API Key",
+                type="password",
+                placeholder="sk-or-v1-...",
+                help="Get your free API key at openrouter.ai"
+            )
 
-            st.info("Ready to analyze files!")
+            # Check for API key in secrets (for Streamlit Cloud)
+            if not api_key:
+                try:
+                    api_key = st.secrets.get("OPENROUTER_API_KEY", "")
+                except Exception:
+                    pass
+
+            st.info("Get your free API key at [openrouter.ai](https://openrouter.ai/keys)")
 
         else:
             # Claude API Key input
@@ -1109,8 +1120,10 @@ with tab2:
             button_label = f"🤖 Analyze Files with {provider_name} AI" + (" (FREE)" if ai_provider == "gemini" else "")
             if st.button(button_label, type="primary", use_container_width=True):
                 if not api_key:
-                    key_type = "Gemini" if ai_provider == "gemini" else "Claude"
-                    st.error(f"Please enter your {key_type} API key or configure it in Streamlit secrets.")
+                    if ai_provider == "gemini":
+                        st.error("Please enter your OpenRouter API key. Get one free at [openrouter.ai/keys](https://openrouter.ai/keys)")
+                    else:
+                        st.error("Please enter your Claude API key or configure it in Streamlit secrets.")
                 else:
                     progress_bar = st.progress(0)
                     status_text = st.empty()
