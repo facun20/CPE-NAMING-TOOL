@@ -784,7 +784,7 @@ Respond with ONLY a JSON object (no markdown, no code blocks):
         response = requests.post(
             OPENROUTER_BASE_URL,
             headers={
-                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
                 "HTTP-Referer": "https://ubc-cpe-naming-tool.streamlit.app",
                 "X-Title": "UBC CPE File Naming Tool"
