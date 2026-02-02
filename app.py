@@ -119,6 +119,33 @@ st.markdown("""
         padding: 15px;
         border-radius: 0 8px 8px 0;
     }
+
+    .location-result {
+        background-color: #e8f4e8;
+        border: 2px solid #002145;
+        border-radius: 8px;
+        padding: 20px;
+        margin: 15px 0;
+    }
+
+    .location-path {
+        font-family: monospace;
+        background-color: #f0f0f0;
+        padding: 10px 15px;
+        border-radius: 4px;
+        font-size: 14px;
+        word-wrap: break-word;
+    }
+
+    .breadcrumb {
+        color: #002145;
+        font-weight: 500;
+    }
+
+    .breadcrumb-separator {
+        color: #C1A01E;
+        margin: 0 8px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -193,6 +220,84 @@ FILE_EXTENSIONS = {
     "png": "png - PNG Image"
 }
 
+# Partner (Faculty-School) codes for file location
+PARTNERS = {
+    "": "Select a partner...",
+    "IKBASS": "IKBASS - Irving K. Barber Faculty of Arts and Social Sciences",
+    "IKBFOS": "IKBFOS - Irving K. Barber Faculty of Science",
+    "FCCS": "FCCS - Faculty of Creative and Critical Studies",
+    "OSE": "OSE - Okanagan School of Education",
+    "APSC-SoE": "APSC-SoE - Faculty of Applied Science - School of Engineering",
+    "FHSD-SoN": "FHSD-SoN - Faculty of Health and Social Development - School of Nursing",
+    "FHSD-SSW": "FHSD-SSW - Faculty of Health and Social Development - School of Social Work",
+    "FHSD-SHES": "FHSD-SHES - Faculty of Health and Social Development - School of Health and Exercise Sciences",
+    "FoM": "FoM - Faculty of Management",
+    "MED": "MED - Faculty of Medicine",
+    "CoGS": "CoGS - College of Graduate Studies"
+}
+
+# CPE Internal functional blocks
+CPE_INTERNAL_BLOCKS = {
+    "": "Select a functional block...",
+    "communications_marketing": "Communications and Marketing",
+    "legal_services": "Legal Services",
+    "office_management": "Office Management",
+    "financial_management": "Financial Management",
+    "human_resources": "Human Resources",
+    "records_management": "Records Management",
+    "learner_administration": "Learner Administration",
+    "university_governance": "University Governance"
+}
+
+# Sub-categories for CPE Internal blocks
+CPE_INTERNAL_SUBCATEGORIES = {
+    "office_management": {
+        "": "Select sub-category...",
+        "General": "General",
+        "Policies and Procedures": "Policies and Procedures",
+        "Communications": "Communications",
+        "Staff Meetings": "Staff Meetings",
+        "Trackers and Lists": "Trackers and Lists",
+        "Canvas Catalog": "Canvas Catalog",
+        "Course Resources": "Course Resources",
+        "Email": "Email",
+        "Letters": "Letters",
+        "Presentations": "Presentations"
+    },
+    "financial_management": {
+        "": "Select sub-category...",
+        "Accounting": "Accounting",
+        "Budget": "Budget",
+        "Procurement and Contract Management": "Procurement and Contract Management"
+    },
+    "learner_administration": {
+        "": "Select sub-category...",
+        "Admissions": "Admissions",
+        "Enrolment and Registration": "Enrolment and Registration",
+        "Final Standing and Results": "Final Standing and Results",
+        "Learner Accounts": "Learner Accounts"
+    }
+}
+
+# Partner-level functional blocks for Definition & Approvals
+DEFINITION_APPROVALS_BLOCKS = {
+    "": "Select file type...",
+    "Market Research": "Market Research",
+    "Course Development": "Course Development",
+    "Proposals and Approvals": "Proposals and Approvals",
+    "Resources and Templates": "Resources and Templates"
+}
+
+# Partner-level functional blocks for Production & Delivery
+PRODUCTION_DELIVERY_BLOCKS = {
+    "": "Select file type...",
+    "Budget": "Budget",
+    "Communications and Marketing": "Communications and Marketing",
+    "Instructor Contracts": "Instructor Contracts",
+    "Course Management": "Course Management",
+    "Course and Curricular Development": "Course and Curricular Development"
+}
+
 HELP_CONTENT = {
     "subject": {
         "title": "Subject/Activity (Required)",
@@ -225,6 +330,28 @@ HELP_CONTENT = {
     "termOffered": {
         "title": "Term Offered (Course Format)",
         "content": "Academic term using format YYYYST where YYYY = Year, S = Session (W=Winter, S=Summer), T = Term (1, 2). Examples: 2024WT1, 2025ST1"
+    }
+}
+
+# Help content for File Location tab
+FILE_LOCATION_HELP = {
+    "partner_related": {
+        "title": "Partner-Related vs CPE Internal",
+        "content": """**Partner-Related:** Files tied to a specific faculty/school partnership and their courses/programs. Examples: course budgets, instructor contracts, program marketing materials.
+
+**CPE Internal:** Files about running CPE as a unit, not tied to any specific partner. Examples: staff meeting minutes, CPE policies, annual reports."""
+    },
+    "definition_vs_production": {
+        "title": "Definition & Approvals vs Production & Delivery",
+        "content": """**Definition & Approvals:** Use for files about getting a program started - market research, proposals, approvals, initial course development.
+
+**Production & Delivery:** Use for files about running an active program - budgets, marketing, instructor contracts, student materials."""
+    },
+    "credential_vs_occurrence": {
+        "title": "Credential Level vs Occurrence Level",
+        "content": """**Credential Level:** Files that apply to ALL offerings of a credential (e.g., master syllabus, general program brochure).
+
+**Occurrence Level:** Files specific to a particular term's offering (e.g., Fall 2024 attendance sheet, instructor contract for Winter 2025)."""
     }
 }
 
@@ -881,16 +1008,78 @@ def generate_filename(format_type: str, subject: str, date_val: datetime, revisi
     return standard_filename, sharepoint_filename
 
 
+def generate_file_location_path(is_partner_related: bool, cpe_block: str = "", cpe_subcat: str = "",
+                                 partner: str = "", phase: str = "", subject_area: str = "",
+                                 credential: str = "", applies_to_all: bool = True,
+                                 occurrence: str = "", file_type: str = "") -> tuple:
+    """Generate file location path based on selections.
+    
+    Returns (breadcrumb_path, folder_path)
+    """
+    breadcrumb_parts = []
+    folder_parts = []
+    
+    if not is_partner_related:
+        # CPE Internal path
+        breadcrumb_parts.append("CPE Internal")
+        folder_parts.append("CPE Internal")
+        
+        if cpe_block:
+            block_name = CPE_INTERNAL_BLOCKS.get(cpe_block, cpe_block)
+            breadcrumb_parts.append(block_name)
+            folder_parts.append(block_name)
+            
+            if cpe_subcat:
+                breadcrumb_parts.append(cpe_subcat)
+                folder_parts.append(cpe_subcat)
+    else:
+        # Partner-related path
+        if partner:
+            partner_name = partner  # Use the code as folder name
+            breadcrumb_parts.append(f"Partner ({partner_name})")
+            folder_parts.append(partner_name)
+            
+            if phase:
+                breadcrumb_parts.append(phase)
+                folder_parts.append(phase)
+                
+                if subject_area:
+                    breadcrumb_parts.append(subject_area)
+                    folder_parts.append(subject_area)
+                    
+                    if phase == "Definition and Approvals":
+                        if file_type:
+                            breadcrumb_parts.append(file_type)
+                            folder_parts.append(file_type)
+                    else:  # Production & Delivery
+                        if credential:
+                            breadcrumb_parts.append(credential)
+                            folder_parts.append(credential)
+                            
+                            if not applies_to_all and occurrence:
+                                breadcrumb_parts.append(occurrence)
+                                folder_parts.append(occurrence)
+                            
+                            if file_type:
+                                breadcrumb_parts.append(file_type)
+                                folder_parts.append(file_type)
+    
+    breadcrumb_path = " → ".join(breadcrumb_parts)
+    folder_path = " / ".join(folder_parts)
+    
+    return breadcrumb_path, folder_path
+
+
 # Main app header
 st.markdown("""
 <div class="main-header">
     <h1>UBC CPE File Naming Tool <span class="version-badge">V2 Web</span></h1>
-    <p style="color: #666;">Generate standardized filenames and analyze files with AI</p>
+    <p style="color: #666;">Generate standardized filenames, find file locations, and analyze files with AI</p>
 </div>
 """, unsafe_allow_html=True)
 
 # Main tabs
-tab1, tab2 = st.tabs(["📝 Manual Generator", "🤖 AI File Analyzer"])
+tab1, tab2, tab3 = st.tabs(["📝 Manual Generator", "📁 File Location", "🤖 AI File Analyzer"])
 
 # ==================== MANUAL GENERATOR TAB ====================
 with tab1:
@@ -1027,8 +1216,240 @@ with tab1:
                 st.markdown('</div>', unsafe_allow_html=True)
 
 
-# ==================== AI FILE ANALYZER TAB ====================
+# ==================== FILE LOCATION TAB ====================
 with tab2:
+    col1, col2 = st.columns([1, 3])
+
+    with col1:
+        st.markdown('<div class="help-panel">', unsafe_allow_html=True)
+        st.subheader("Quick Guide")
+        
+        location_help_topic = st.selectbox(
+            "Learn more about:",
+            [""] + list(FILE_LOCATION_HELP.keys()),
+            format_func=lambda x: FILE_LOCATION_HELP[x]["title"] if x else "Select a topic...",
+            key="location_help"
+        )
+        
+        if location_help_topic:
+            st.info(f"**{FILE_LOCATION_HELP[location_help_topic]['title']}**\n\n{FILE_LOCATION_HELP[location_help_topic]['content']}")
+        
+        st.divider()
+        st.markdown("**Common File Types:**")
+        st.markdown("""
+        - **Budget** - Financial records, invoices, forecasts
+        - **Communications & Marketing** - Brochures, campaigns, branding
+        - **Instructor Contracts** - Teaching agreements
+        - **Course Management** - Syllabi, schedules, attendance
+        - **Course Development** - Curriculum, learning outcomes
+        """)
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    with col2:
+        st.subheader("Where Does This File Go?")
+        st.markdown("Answer the questions below to find the correct folder location for your file.")
+        
+        st.divider()
+        
+        # Question 1: Partner-related or CPE Internal?
+        is_partner_related = st.radio(
+            "**Is this file tied to a specific partner (faculty/school)?**",
+            [True, False],
+            format_func=lambda x: "Yes - Related to a specific partner's program" if x else "No - General CPE operations",
+            horizontal=True,
+            key="is_partner"
+        )
+        
+        st.divider()
+        
+        # Initialize variables
+        cpe_block = ""
+        cpe_subcat = ""
+        partner = ""
+        phase = ""
+        subject_area = ""
+        credential = ""
+        applies_to_all = True
+        occurrence = ""
+        file_type = ""
+        
+        if not is_partner_related:
+            # CPE Internal path
+            st.markdown("### CPE Internal")
+            
+            cpe_block = st.selectbox(
+                "**What function does this file support?**",
+                list(CPE_INTERNAL_BLOCKS.keys()),
+                format_func=lambda x: CPE_INTERNAL_BLOCKS[x],
+                key="cpe_block"
+            )
+            
+            # Show sub-categories if applicable
+            if cpe_block in CPE_INTERNAL_SUBCATEGORIES:
+                cpe_subcat = st.selectbox(
+                    "**Select sub-category:**",
+                    list(CPE_INTERNAL_SUBCATEGORIES[cpe_block].keys()),
+                    format_func=lambda x: CPE_INTERNAL_SUBCATEGORIES[cpe_block][x],
+                    key="cpe_subcat"
+                )
+        else:
+            # Partner-related path
+            st.markdown("### Partner-Related")
+            
+            partner = st.selectbox(
+                "**Which partner?**",
+                list(PARTNERS.keys()),
+                format_func=lambda x: PARTNERS[x],
+                key="partner"
+            )
+            
+            if partner:
+                phase = st.radio(
+                    "**Is this about developing a new program or running an active one?**",
+                    ["Definition and Approvals", "Production and Delivery"],
+                    format_func=lambda x: {
+                        "Definition and Approvals": "Definition & Approvals - Getting a program started (proposals, market research)",
+                        "Production and Delivery": "Production & Delivery - Running an active program"
+                    }[x],
+                    key="phase"
+                )
+                
+                subject_area = st.text_input(
+                    "**Subject Area** (e.g., Nursing Foundations, Wildland Fire Management)",
+                    placeholder="Enter subject area name...",
+                    key="subject_area"
+                )
+                
+                if phase == "Definition and Approvals":
+                    file_type = st.selectbox(
+                        "**What type of file is this?**",
+                        list(DEFINITION_APPROVALS_BLOCKS.keys()),
+                        format_func=lambda x: DEFINITION_APPROVALS_BLOCKS[x],
+                        key="def_file_type"
+                    )
+                else:  # Production & Delivery
+                    credential = st.text_input(
+                        "**Credential name** (e.g., Certificate in Nursing Foundations)",
+                        placeholder="Enter credential name...",
+                        key="credential"
+                    )
+                    
+                    if credential:
+                        applies_to_all = st.radio(
+                            "**Does this file apply to all offerings or a specific term?**",
+                            [True, False],
+                            format_func=lambda x: "All offerings of this credential" if x else "A specific term/occurrence",
+                            horizontal=True,
+                            key="applies_to_all"
+                        )
+                        
+                        if not applies_to_all:
+                            st.markdown("**Build occurrence code:**")
+                            occ_col1, occ_col2, occ_col3 = st.columns(3)
+                            
+                            with occ_col1:
+                                occ_year = st.selectbox(
+                                    "Year",
+                                    [str(y) for y in range(2020, 2031)],
+                                    index=5,  # Default to 2025
+                                    key="occ_year"
+                                )
+                            
+                            with occ_col2:
+                                occ_session = st.selectbox(
+                                    "Session",
+                                    ["W", "S"],
+                                    format_func=lambda x: "W - Winter (Sept-Apr)" if x == "W" else "S - Summer (May-Aug)",
+                                    key="occ_session"
+                                )
+                            
+                            with occ_col3:
+                                occ_term = st.selectbox(
+                                    "Term",
+                                    ["1", "2"],
+                                    format_func=lambda x: {
+                                        "1": "T1 - First term",
+                                        "2": "T2 - Second term"
+                                    }[x],
+                                    key="occ_term"
+                                )
+                            
+                            occurrence = f"{occ_year}{occ_session}T{occ_term}"
+                            st.markdown(f"**Occurrence code:** `{occurrence}`")
+                    
+                    file_type = st.selectbox(
+                        "**What type of file is this?**",
+                        list(PRODUCTION_DELIVERY_BLOCKS.keys()),
+                        format_func=lambda x: PRODUCTION_DELIVERY_BLOCKS[x],
+                        key="prod_file_type"
+                    )
+        
+        st.divider()
+        
+        # Generate location button
+        if st.button("📁 Show File Location", type="primary", use_container_width=True):
+            # Validate inputs
+            valid = True
+            if not is_partner_related:
+                if not cpe_block:
+                    st.error("Please select a functional block.")
+                    valid = False
+            else:
+                if not partner:
+                    st.error("Please select a partner.")
+                    valid = False
+                elif not subject_area:
+                    st.error("Please enter a subject area.")
+                    valid = False
+                elif phase == "Production and Delivery" and not credential:
+                    st.error("Please enter a credential name.")
+                    valid = False
+            
+            if valid:
+                breadcrumb_path, folder_path = generate_file_location_path(
+                    is_partner_related=is_partner_related,
+                    cpe_block=cpe_block,
+                    cpe_subcat=cpe_subcat,
+                    partner=partner,
+                    phase=phase,
+                    subject_area=subject_area,
+                    credential=credential,
+                    applies_to_all=applies_to_all,
+                    occurrence=occurrence,
+                    file_type=file_type
+                )
+                
+                st.markdown('<div class="location-result">', unsafe_allow_html=True)
+                st.subheader("📁 File Location")
+                
+                # Display breadcrumb path
+                st.markdown("**Navigation path:**")
+                st.markdown(f'<div class="location-path">{breadcrumb_path}</div>', unsafe_allow_html=True)
+                
+                # Display folder path
+                st.markdown("**Folder structure:**")
+                st.code(folder_path, language=None)
+                
+                # Copy-friendly version
+                st.text_input("Copy path:", value=folder_path, key="copy_path")
+                
+                st.markdown('</div>', unsafe_allow_html=True)
+                
+                # Show helpful context
+                if not is_partner_related:
+                    st.info("💡 **Tip:** CPE Internal files are for general operations not tied to any specific partner program.")
+                else:
+                    if phase == "Definition and Approvals":
+                        st.info("💡 **Tip:** Definition & Approvals is for files about getting a new program started - proposals, market research, initial development.")
+                    else:
+                        if applies_to_all:
+                            st.info("💡 **Tip:** Credential-level files apply to ALL offerings (e.g., master syllabus, program brochure).")
+                        else:
+                            st.info(f"💡 **Tip:** This file is specific to the {occurrence} offering only.")
+
+
+# ==================== AI FILE ANALYZER TAB ====================
+with tab3:
     col1, col2 = st.columns([2, 1])
 
     with col2:
