@@ -295,7 +295,8 @@ PRODUCTION_DELIVERY_BLOCKS = {
     "Communications and Marketing": "Communications and Marketing",
     "Instructor Contracts": "Instructor Contracts",
     "Course Management": "Course Management",
-    "Course and Curricular Development": "Course and Curricular Development"
+    "Course and Curricular Development": "Course and Curricular Development",
+    "Resources and Templates": "Resources and Templates"
 }
 
 HELP_CONTENT = {
@@ -1043,26 +1044,28 @@ def generate_file_location_path(is_partner_related: bool, cpe_block: str = "", c
                 breadcrumb_parts.append(phase)
                 folder_parts.append(phase)
                 
-                if subject_area:
-                    breadcrumb_parts.append(subject_area)
-                    folder_parts.append(subject_area)
-                    
-                    if phase == "Definition and Approvals":
+                if phase == "Definition and Approvals":
+                    # Definition & Approvals: Partner → Phase → Subject Area → file type
+                    if subject_area:
+                        breadcrumb_parts.append(subject_area)
+                        folder_parts.append(subject_area)
+                        
                         if file_type:
                             breadcrumb_parts.append(file_type)
                             folder_parts.append(file_type)
-                    else:  # Production & Delivery
-                        if credential:
-                            breadcrumb_parts.append(credential)
-                            folder_parts.append(credential)
-                            
-                            if not applies_to_all and occurrence:
-                                breadcrumb_parts.append(occurrence)
-                                folder_parts.append(occurrence)
-                            
-                            if file_type:
-                                breadcrumb_parts.append(file_type)
-                                folder_parts.append(file_type)
+                else:  # Production & Delivery
+                    # Production & Delivery: Partner → Phase → Credential → (occurrence) → file type
+                    if credential:
+                        breadcrumb_parts.append(credential)
+                        folder_parts.append(credential)
+                        
+                        if not applies_to_all and occurrence:
+                            breadcrumb_parts.append(occurrence)
+                            folder_parts.append(occurrence)
+                        
+                        if file_type:
+                            breadcrumb_parts.append(file_type)
+                            folder_parts.append(file_type)
     
     breadcrumb_path = " → ".join(breadcrumb_parts)
     folder_path = " / ".join(folder_parts)
@@ -1314,13 +1317,14 @@ with tab2:
                     key="phase"
                 )
                 
-                subject_area = st.text_input(
-                    "**Subject Area** (e.g., Nursing Foundations, Wildland Fire Management)",
-                    placeholder="Enter subject area name...",
-                    key="subject_area"
-                )
-                
                 if phase == "Definition and Approvals":
+                    # Definition & Approvals uses Subject Area
+                    subject_area = st.text_input(
+                        "**Subject Area** (e.g., Nursing Foundations, Wildland Fire Management)",
+                        placeholder="Enter subject area name...",
+                        key="subject_area"
+                    )
+                    
                     file_type = st.selectbox(
                         "**What type of file is this?**",
                         list(DEFINITION_APPROVALS_BLOCKS.keys()),
@@ -1328,8 +1332,9 @@ with tab2:
                         key="def_file_type"
                     )
                 else:  # Production & Delivery
+                    # Production & Delivery goes straight to Credential (no Subject Area)
                     credential = st.text_input(
-                        "**Credential name** (e.g., Certificate in Nursing Foundations)",
+                        "**Credential name** (e.g., Fundamentals of Wildland Fire Ecology and Management)",
                         placeholder="Enter credential name...",
                         key="credential"
                     )
@@ -1398,7 +1403,7 @@ with tab2:
                 if not partner:
                     st.error("Please select a partner.")
                     valid = False
-                elif not subject_area:
+                elif phase == "Definition and Approvals" and not subject_area:
                     st.error("Please enter a subject area.")
                     valid = False
                 elif phase == "Production and Delivery" and not credential:
