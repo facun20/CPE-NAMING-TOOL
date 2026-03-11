@@ -97,10 +97,14 @@ def _get_engines():
         return None, None
 
     if _analyzer_engine is None:
-        _analyzer_engine = AnalyzerEngine()
-        # Register custom recognizers
-        for recognizer in _build_custom_recognizers():
-            _analyzer_engine.registry.add_recognizer(recognizer)
+        try:
+            _analyzer_engine = AnalyzerEngine()
+            # Register custom recognizers
+            for recognizer in _build_custom_recognizers():
+                _analyzer_engine.registry.add_recognizer(recognizer)
+        except Exception:
+            # spaCy model not installed — fall back to regex
+            return None, None
 
     if _anonymizer_engine is None:
         _anonymizer_engine = AnonymizerEngine()
@@ -288,8 +292,15 @@ def get_pii_summary(detected: list[dict]) -> dict:
 
 
 def is_available() -> bool:
-    """Check if Presidio is available for full PII detection."""
-    return PRESIDIO_AVAILABLE
+    """Check if Presidio and its spaCy model are available for full PII detection."""
+    if not PRESIDIO_AVAILABLE:
+        return False
+    try:
+        import spacy
+        spacy.load("en_core_web_lg")
+        return True
+    except Exception:
+        return False
 
 
 # Friendly names for PII entity types (for UI display)
