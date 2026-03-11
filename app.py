@@ -1,1088 +1,146 @@
+"""
+UBC CPE File Naming Tool - Main Application
+
+A Streamlit web app for UBC Continuing Professional Education staff to:
+- Generate standardized filenames following CPE conventions
+- Navigate file location structure
+- Analyze documents with AI for automatic naming suggestions
+
+Modules:
+- constants.py: All data models, codes, and configuration
+- file_processing.py: File content extraction (PDF, Word, Excel, images)
+- filename_generator.py: Filename generation and validation
+- file_location.py: File location path generation
+- ai_analysis.py: AI analysis (Claude, Gemini, rule-based fallback)
+- ui_components.py: Templates, analytics, export, styling
+"""
+
 import streamlit as st
-import anthropic
-import requests
-import base64
 import re
-import json
 from datetime import datetime
-from io import BytesIO
 
-# OpenRouter API configuration (users provide their own API key)
-OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1/chat/completions"
-GEMINI_MODEL = "google/gemini-2.5-flash"
-
-# PDF parsing and rendering
-try:
-    import fitz  # PyMuPDF - for PDF to image conversion (OCR support)
-    PYMUPDF_AVAILABLE = True
-except ImportError:
-    PYMUPDF_AVAILABLE = False
-
-try:
-    from PyPDF2 import PdfReader
-    PDF_AVAILABLE = True
-except ImportError:
-    PDF_AVAILABLE = False
-
-# Word document parsing
-try:
-    from docx import Document
-    DOCX_AVAILABLE = True
-except ImportError:
-    DOCX_AVAILABLE = False
-
-# Excel parsing
-try:
-    import openpyxl
-    XLSX_AVAILABLE = True
-except ImportError:
-    XLSX_AVAILABLE = False
-
-# Image handling
-try:
-    from PIL import Image
-    PIL_AVAILABLE = True
-except ImportError:
-    PIL_AVAILABLE = False
-
-# Page configuration
-st.set_page_config(
-    page_title="UBC CPE File Naming Tool",
-    page_icon="📁",
-    layout="wide",
-    initial_sidebar_state="expanded"
+from constants import (
+    DOCUMENT_FORMS,
+    REVISION_STATUSES,
+    FILE_EXTENSIONS,
+    PARTNERS,
+    CPE_INTERNAL_BLOCKS,
+    CPE_INTERNAL_SUBCATEGORIES,
+    DEFINITION_APPROVALS_BLOCKS,
+    PRODUCTION_DELIVERY_BLOCKS,
+    HELP_CONTENT,
+    FILE_LOCATION_HELP,
+    SUPPORTED_FILE_TYPES,
+)
+from filename_generator import (
+    generate_filename,
+    validate_all_fields,
+    check_filename_length,
+)
+from file_location import generate_file_location_path
+from file_processing import read_file_content, compute_file_hash
+from ai_analysis import (
+    analyze_with_claude,
+    analyze_with_gemini,
+    analyze_with_rules,
+    get_confidence_level,
+)
+from ui_components import (
+    CUSTOM_CSS,
+    ACCESSIBILITY_HTML,
+    get_all_templates,
+    save_custom_template,
+    delete_custom_template,
+    init_analytics,
+    track_filename_generated,
+    track_ai_analysis,
+    track_location_generated,
+    get_analytics_summary,
+    export_results_to_csv,
+    save_results,
+    get_saved_results,
+    clear_saved_results,
 )
 
-# Custom CSS for UBC branding
-st.markdown("""
-<style>
-    :root {
-        --ubc-blue: #002145;
-        --ubc-gold: #C1A01E;
-    }
+# ─── Page configuration ───────────────────────────────────────────────────
 
-    .main-header {
-        text-align: center;
-        padding: 20px;
-        border-bottom: 3px solid #002145;
-        margin-bottom: 20px;
-    }
+st.set_page_config(
+    page_title="UBC CPE File Naming Tool",
+    page_icon="\U0001f4c1",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
 
-    .main-header h1 {
-        color: #002145;
-        margin-bottom: 5px;
-    }
+# Initialize analytics
+init_analytics(st.session_state)
 
-    .version-badge {
-        background-color: #C1A01E;
-        color: white;
-        padding: 4px 12px;
-        border-radius: 12px;
-        font-size: 14px;
-        font-weight: 600;
-    }
+# Inject CSS and accessibility features
+st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
+st.markdown(ACCESSIBILITY_HTML, unsafe_allow_html=True)
 
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 8px;
-    }
+# ─── Authentication ────────────────────────────────────────────────────────
 
-    .stTabs [data-baseweb="tab"] {
-        background-color: #f0f0f0;
-        border-radius: 8px 8px 0 0;
-        padding: 10px 20px;
-    }
-
-    .stTabs [aria-selected="true"] {
-        background-color: #002145 !important;
-        color: white !important;
-    }
-
-    .output-box {
-        background-color: #f8f8f8;
-        border-left: 4px solid #C1A01E;
-        padding: 15px;
-        border-radius: 0 8px 8px 0;
-        margin: 10px 0;
-    }
-
-    .file-suggestion {
-        background-color: #e8f4f8;
-        border: 1px solid #002145;
-        border-radius: 8px;
-        padding: 15px;
-        margin: 10px 0;
-    }
-
-    .help-panel {
-        background-color: #f8f8f8;
-        border-left: 4px solid #C1A01E;
-        padding: 15px;
-        border-radius: 0 8px 8px 0;
-    }
-
-    .location-result {
-        background-color: #e8f4e8;
-        border: 2px solid #002145;
-        border-radius: 8px;
-        padding: 20px;
-        margin: 15px 0;
-    }
-
-    .location-path {
-        font-family: monospace;
-        background-color: #f0f0f0;
-        padding: 10px 15px;
-        border-radius: 4px;
-        font-size: 14px;
-        word-wrap: break-word;
-    }
-
-    .breadcrumb {
-        color: #002145;
-        font-weight: 500;
-    }
-
-    .breadcrumb-separator {
-        color: #C1A01E;
-        margin: 0 8px;
-    }
-</style>
-""", unsafe_allow_html=True)
-
-# Document form codes
-DOCUMENT_FORMS = {
-    "": "Select document form",
-    "AGD": "AGD - Agenda",
-    "AGR": "AGR - Agreement",
-    "ANN": "ANN - Announcement",
-    "APP": "APP - Appendix",
-    "ATD": "ATD - Attendance",
-    "BGT": "BGT - Course Budget",
-    "BRN": "BRN - Briefing Note",
-    "CCP": "CCP - Concept Paper",
-    "CON": "CON - Contract",
-    "DAT": "DAT - Data Set",
-    "FCT": "FCT - Fact Sheet",
-    "FRM": "FRM - Form",
-    "GRA": "GRA - Grant",
-    "GUI": "GUI - Guidelines",
-    "INS": "INS - Instruction",
-    "INT": "INT - Interview",
-    "INV": "INV - Invoice",
-    "LAT": "LAT - Letter of Attendance",
-    "LCO": "LCO - Letter of Completion",
-    "LGL": "LGL - Legal Document",
-    "LPA": "LPA - Letter of Participation",
-    "LPR": "LPR - Letter of Proficiency",
-    "LTR": "LTR - Letter",
-    "MIN": "MIN - Minutes",
-    "MNL": "MNL - Manual",
-    "NCC": "NCC - Non-Credit Certificate",
-    "NCM": "NCM - Non-Credit MicroCertificate",
-    "PLN": "PLN - Plan",
-    "POL": "POL - Policy",
-    "PRC": "PRC - Procedure",
-    "PRO": "PRO - Proposal",
-    "PRS": "PRS - Presentation",
-    "PST": "PST - Poster",
-    "RPT": "RPT - Report",
-    "RVW": "RVW - Review",
-    "SCH": "SCH - Schedule",
-    "SMP": "SMP - Sample",
-    "SRY": "SRY - Survey",
-    "SUM": "SUM - Summary",
-    "TEM": "TEM - Template",
-    "TML": "TML - Timeline",
-    "IMG": "IMG - Image",
-    "SCR": "SCR - Screenshot",
-    "DIA": "DIA - Diagram"
-}
-
-REVISION_STATUSES = {
-    "A": "A - Initial draft sent for review",
-    "B": "B - Official draft sent for external or internal review",
-    "C": "C - Next incarnation of official draft",
-    "0": "0 - First final revision",
-    "0A": "0A - Draft after final has been produced",
-    "0B": "0B - Draft after final has been produced",
-    "0C": "0C - Draft after final has been produced",
-    "1": "1 - Next revision after final"
-}
-
-FILE_EXTENSIONS = {
-    "pdf": "pdf - Portable Document Format",
-    "docx": "docx - Word Document",
-    "xlsx": "xlsx - Excel Spreadsheet",
-    "pptx": "pptx - PowerPoint Presentation",
-    "txt": "txt - Text File",
-    "csv": "csv - Comma Separated Values",
-    "jpg": "jpg - JPEG Image",
-    "png": "png - PNG Image"
-}
-
-# Partner (Faculty-School) codes for file location
-PARTNERS = {
-    "": "Select a partner...",
-    "IKBASS": "IKBASS - Irving K. Barber Faculty of Arts and Social Sciences",
-    "IKBFOS": "IKBFOS - Irving K. Barber Faculty of Science",
-    "FCCS": "FCCS - Faculty of Creative and Critical Studies",
-    "OSE": "OSE - Okanagan School of Education",
-    "APSC-SoE": "APSC-SoE - Faculty of Applied Science - School of Engineering",
-    "FHSD-SoN": "FHSD-SoN - Faculty of Health and Social Development - School of Nursing",
-    "FHSD-SSW": "FHSD-SSW - Faculty of Health and Social Development - School of Social Work",
-    "FHSD-SHES": "FHSD-SHES - Faculty of Health and Social Development - School of Health and Exercise Sciences",
-    "FoM": "FoM - Faculty of Management",
-    "MED": "MED - Faculty of Medicine",
-    "CoGS": "CoGS - College of Graduate Studies"
-}
-
-# CPE Internal functional blocks
-CPE_INTERNAL_BLOCKS = {
-    "": "Select a functional block...",
-    "communications_marketing": "Communications and Marketing",
-    "legal_services": "Legal Services",
-    "office_management": "Office Management",
-    "financial_management": "Financial Management",
-    "human_resources": "Human Resources",
-    "records_management": "Records Management",
-    "learner_administration": "Learner Administration",
-    "university_governance": "University Governance"
-}
-
-# Sub-categories for CPE Internal blocks
-CPE_INTERNAL_SUBCATEGORIES = {
-    "office_management": {
-        "": "Select sub-category...",
-        "General": "General",
-        "Policies and Procedures": "Policies and Procedures",
-        "Communications": "Communications",
-        "Staff Meetings": "Staff Meetings",
-        "Trackers and Lists": "Trackers and Lists",
-        "Canvas Catalog": "Canvas Catalog",
-        "Course Resources": "Course Resources",
-        "Email": "Email",
-        "Letters": "Letters",
-        "Presentations": "Presentations"
-    },
-    "financial_management": {
-        "": "Select sub-category...",
-        "Accounting": "Accounting",
-        "Budget": "Budget",
-        "Procurement and Contract Management": "Procurement and Contract Management"
-    },
-    "learner_administration": {
-        "": "Select sub-category...",
-        "Admissions": "Admissions",
-        "Enrolment and Registration": "Enrolment and Registration",
-        "Final Standing and Results": "Final Standing and Results",
-        "Learner Accounts": "Learner Accounts"
-    }
-}
-
-# Partner-level functional blocks for Definition & Approvals
-DEFINITION_APPROVALS_BLOCKS = {
-    "": "Select file type...",
-    "Market Research": "Market Research",
-    "Course Development": "Course Development",
-    "Proposals and Approvals": "Proposals and Approvals",
-    "Resources and Templates": "Resources and Templates"
-}
-
-# Partner-level functional blocks for Production & Delivery
-PRODUCTION_DELIVERY_BLOCKS = {
-    "": "Select file type...",
-    "Budget": "Budget",
-    "Communications and Marketing": "Communications and Marketing",
-    "Instructor Contracts": "Instructor Contracts",
-    "Course Management": "Course Management",
-    "Course and Curricular Development": "Course and Curricular Development",
-    "Resources and Templates": "Resources and Templates"
-}
-
-HELP_CONTENT = {
-    "subject": {
-        "title": "Subject/Activity (Required)",
-        "content": "The main topic or activity the document covers. Use PascalCase formatting (capitalize the first letter of each word with no spaces). Examples: NamingConventions, RecordsManagement, CourseEvaluation"
-    },
-    "date": {
-        "title": "Date (Required)",
-        "content": "The date when the document was created or last modified. Will be formatted as YYYY-MM-DD according to ISO 8601 standard. Example: 2025-05-28"
-    },
-    "revisionStatus": {
-        "title": "Revision Status (Required)",
-        "content": "Indicates the version and status: Letters (A, B, C) for drafts, Numbers (0, 1, 2) for final versions, Combinations (0A, 0B) for drafts after final version"
-    },
-    "projectCode": {
-        "title": "Project/Account Number (Optional)",
-        "content": "A control number, project code, or account identifier that helps organize documents. Examples: CPE, PROJ2024, ACC-001"
-    },
-    "documentForm": {
-        "title": "Document Form (Optional)",
-        "content": "Three-letter code indicating the type of document. Common forms: AGD (Agenda), RPT (Report), GUI (Guidelines), PRS (Presentation), MNL (Manual)"
-    },
-    "facultySchool": {
-        "title": "Faculty-School (Course Format)",
-        "content": "Identifies the faculty and school using a dash separator. Examples: FHSD-SoN (Faculty of Health & Social Development - School of Nursing)"
-    },
-    "courseCode": {
-        "title": "Course Code (Course Format)",
-        "content": "Four-digit course number followed by four-digit section code, separated by a dash. Format: ####-#### Examples: 0386-0001"
-    },
-    "termOffered": {
-        "title": "Term Offered (Course Format)",
-        "content": "Academic term using format YYYYST where YYYY = Year, S = Session (W=Winter, S=Summer), T = Term (1, 2). Examples: 2024WT1, 2025ST1"
-    }
-}
-
-# Help content for File Location tab
-FILE_LOCATION_HELP = {
-    "partner_related": {
-        "title": "Partner-Related vs CPE Internal",
-        "content": """**Partner-Related:** Files tied to a specific faculty/school partnership and their courses/programs. Examples: course budgets, instructor contracts, program marketing materials.
-
-**CPE Internal:** Files about running CPE as a unit, not tied to any specific partner. Examples: staff meeting minutes, CPE policies, annual reports."""
-    },
-    "definition_vs_production": {
-        "title": "Definition & Approvals vs Production & Delivery",
-        "content": """**Definition & Approvals:** Use for files about getting a program started - market research, proposals, approvals, initial course development.
-
-**Production & Delivery:** Use for files about running an active program - budgets, marketing, instructor contracts, student materials."""
-    },
-    "credential_vs_occurrence": {
-        "title": "Credential Level vs Occurrence Level",
-        "content": """**Credential Level:** Files that apply to ALL offerings of a credential (e.g., master syllabus, general program brochure).
-
-**Occurrence Level:** Files specific to a particular term's offering (e.g., Fall 2024 attendance sheet, instructor contract for Winter 2025)."""
-    }
-}
-
-
-def pdf_to_image(file_bytes: bytes) -> str:
-    """Convert first page of PDF to base64 image for AI vision/OCR.
-
-    Returns base64 data URI string for image, or None if conversion fails.
-    """
-    if not PYMUPDF_AVAILABLE:
-        return None
-
+def check_auth() -> bool:
+    """Check if authentication is enabled and if user is authenticated."""
     try:
-        # Open PDF from bytes
-        pdf_doc = fitz.open(stream=file_bytes, filetype="pdf")
+        auth_enabled = st.secrets.get("AUTH_ENABLED", False)
+    except Exception:
+        return True  # No secrets configured, skip auth
+
+    if not auth_enabled:
+        return True
+
+    if st.session_state.get("authenticated"):
+        return True
+
+    st.markdown("""
+    <div class="main-header">
+        <h1>UBC CPE File Naming Tool</h1>
+        <p>Please sign in to continue</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    with st.form("login_form"):
+        username = st.text_input("Username", autocomplete="username")
+        password = st.text_input("Password", type="password", autocomplete="current-password")
+        submitted = st.form_submit_button("Sign In", type="primary", use_container_width=True)
+
+        if submitted:
+            try:
+                valid_users = st.secrets.get("USERS", {})
+                if username in valid_users and valid_users[username] == password:
+                    st.session_state["authenticated"] = True
+                    st.session_state["username"] = username
+                    st.rerun()
+                else:
+                    st.error("Invalid username or password.")
+            except Exception:
+                st.error("Authentication configuration error.")
+
+    return False
+
+
+if not check_auth():
+    st.stop()
+
+# ─── Main App Header ──────────────────────────────────────────────────────
 
-        # Get first page (most important for document identification)
-        page = pdf_doc[0]
-
-        # Render page to image at 150 DPI (good balance of quality vs size)
-        mat = fitz.Matrix(150/72, 150/72)  # 150 DPI
-        pix = page.get_pixmap(matrix=mat)
-
-        # Convert to PNG bytes
-        img_bytes = pix.tobytes("png")
-
-        # Encode as base64
-        base64_data = base64.b64encode(img_bytes).decode('utf-8')
-
-        pdf_doc.close()
-
-        return f"data:image/png;base64,{base64_data}"
-    except Exception as e:
-        return None
-
-
-def read_pdf_content(file_bytes: bytes) -> str:
-    """Extract text from PDF file (fallback when image conversion not available)."""
-    if not PDF_AVAILABLE:
-        return "PDF parsing not available"
-
-    try:
-        pdf_reader = PdfReader(BytesIO(file_bytes))
-        text = ""
-        for page in pdf_reader.pages[:10]:  # Limit to first 10 pages
-            text += page.extract_text() or ""
-        return text[:4000]
-    except Exception as e:
-        return f"Could not extract PDF text: {str(e)}"
-
-
-def read_docx_content(file_bytes: bytes) -> str:
-    """Extract text from Word document."""
-    if not DOCX_AVAILABLE:
-        return "Word document parsing not available"
-
-    try:
-        doc = Document(BytesIO(file_bytes))
-        text = "\n".join([para.text for para in doc.paragraphs])
-        return text[:4000]
-    except Exception as e:
-        return f"Could not extract Word text: {str(e)}"
-
-
-def read_xlsx_content(file_bytes: bytes) -> str:
-    """Extract text from Excel file with better structure preservation."""
-    if not XLSX_AVAILABLE:
-        return "Excel parsing not available"
-
-    try:
-        workbook = openpyxl.load_workbook(BytesIO(file_bytes), data_only=True)
-        text = "=== EXCEL FILE CONTENT ===\n"
-
-        for sheet_name in workbook.sheetnames[:3]:  # Limit to first 3 sheets
-            sheet = workbook[sheet_name]
-            text += f"\n--- Sheet: {sheet_name} ---\n"
-
-            # Get actual used range
-            max_row = min(sheet.max_row or 1, 100)  # Limit to 100 rows
-            max_col = min(sheet.max_column or 1, 20)  # Limit to 20 columns
-
-            row_count = 0
-            for row in sheet.iter_rows(min_row=1, max_row=max_row, max_col=max_col, values_only=True):
-                # Skip completely empty rows
-                if any(cell for cell in row):
-                    row_text = " | ".join([str(cell)[:50] if cell else "" for cell in row])
-                    text += row_text.strip() + "\n"
-                    row_count += 1
-                    if row_count >= 75:  # Limit rows per sheet
-                        text += "... (more rows)\n"
-                        break
-
-        return text[:6000]  # Allow more content for Excel
-    except Exception as e:
-        return f"Could not extract Excel text: {str(e)}"
-
-
-def read_file_content(uploaded_file) -> tuple:
-    """Read content from uploaded file. Returns (content, content_type).
-
-    For PDFs: Converts to image for AI vision/OCR (much better text detection).
-    Falls back to text extraction if image conversion unavailable.
-    """
-    file_bytes = uploaded_file.read()
-    file_name = uploaded_file.name.lower()
-
-    if file_name.endswith('.pdf'):
-        # Try to convert PDF to image for AI vision/OCR (best accuracy)
-        pdf_image = pdf_to_image(file_bytes)
-        if pdf_image:
-            return pdf_image, "image"
-        # Fallback to text extraction if PyMuPDF not available
-        return read_pdf_content(file_bytes), "text"
-    elif file_name.endswith('.docx'):
-        return read_docx_content(file_bytes), "text"
-    elif file_name.endswith(('.xlsx', '.xls')):
-        return read_xlsx_content(file_bytes), "text"
-    elif file_name.endswith(('.txt', '.csv')):
-        return file_bytes.decode('utf-8', errors='ignore')[:4000], "text"
-    elif file_name.endswith(('.jpg', '.jpeg', '.png', '.gif')):
-        # For images, return base64 encoded data
-        ext = file_name.split('.')[-1]
-        mime_type = f"image/{ext}" if ext != 'jpg' else "image/jpeg"
-        base64_data = base64.b64encode(file_bytes).decode('utf-8')
-        return f"data:{mime_type};base64,{base64_data}", "image"
-    else:
-        return "Unsupported file type", "unknown"
-
-
-def analyze_with_claude(api_key: str, content: str, file_name: str, content_type: str, privacy_level: str) -> dict:
-    """Analyze file content with Claude API."""
-    try:
-        client = anthropic.Anthropic(api_key=api_key)
-        today = datetime.now().strftime("%Y-%m-%d")
-
-        if content_type == "image":
-            # Image analysis
-            mime_type = content.split(';')[0].replace('data:', '')
-            base64_data = content.split(',')[1]
-
-            # Determine if this is likely a PDF (rendered as image) or actual image
-            is_pdf = file_name.lower().endswith('.pdf')
-            ext = "pdf" if is_pdf else file_name.split('.')[-1] if '.' in file_name else "jpg"
-
-            if is_pdf:
-                # PDF rendered as image - Claude analysis with OCR
-                image_prompt = f"""You are a file naming expert for UBC CPE (Continuing Professional Education). READ ALL TEXT in this PDF document image carefully.
-
-Current filename: {file_name}
-Today's date: {today}
-
-=== STEP 1: EXTRACT ALL AVAILABLE FIELDS ===
-
-1. FACULTY-SCHOOL (use dash between Faculty and School):
-   UBC Okanagan Faculties & Schools - use these abbreviations:
-   - "Irving K. Barber Faculty of Arts and Social Sciences" → IKBASS
-   - "Irving K. Barber Faculty of Science" → IKBFOS (or IKB-FOS if with school)
-   - "Faculty of Creative and Critical Studies" → FCCS
-   - "Okanagan School of Education" → OSE
-   - "Faculty of Applied Science" / "School of Engineering" → APSC-SoE
-   - "Faculty of Health and Social Development" → FHSD
-     - with "School of Nursing" → FHSD-SoN
-     - with "School of Social Work" → FHSD-SSW
-     - with "School of Health and Exercise Sciences" → FHSD-SHES
-   - "Faculty of Management" → FoM
-   - "Faculty of Medicine" → MED
-   - "College of Graduate Studies" → CoGS
-
-   FORMAT: Faculty-School with dash (e.g., FHSD-SoN, APSC-SoE)
-   If only Faculty found (no specific school), just use Faculty code (e.g., FCCS)
-
-2. COURSE CODE - Four digits + dash + four digits (e.g., 0386-0001)
-   Look for course numbers, section codes
-
-3. TERM OFFERED - Format: YYYYST (Year + Session + Term)
-   - Session: W = Winter (Sept-Apr), S = Summer (May-Aug)
-   - Term: 1 or 2
-   - Sept-Dec → WT1 | Jan-Apr → WT2 | May-Jun → ST1 | Jul-Aug → ST2
-   - Example: "December 2025" → 2025WT1
-   - Example: "March 2026" → 2025WT2 (still Winter session)
-
-4. PROJECT/ACCOUNT CODE - Project numbers, grant codes (e.g., CPE, PROJ2024)
-
-5. SUBJECT - Use Title-Kebab-Case (e.g., Wildland-Fire-Ecology)
-   ⚠️ MAX 50 CHARACTERS! Truncate at word boundary if longer.
-   Example: "Foundations-For-A-Restorative-Approach-Health-Care" (50 chars max)
-
-6. DOCUMENT FORM codes:
-   LETTERS & CERTIFICATES:
-   - "Letter of Proficiency" → LPR | "Letter of Completion" → LCO
-   - "Letter of Attendance" → LAT | "Letter of Participation" → LPA
-   - "Non-Credit Certificate" → NCC | "MicroCertificate" → NCM
-
-   COMMON TYPES:
-   - Agenda → AGD | Agreement → AGR | Budget → BGT | Contract → CON
-   - Form → FRM | Guidelines/Guide → GUI | Instructions → INS | Invoice → INV
-   - Letter (general) → LTR | Minutes → MIN | Manual → MNL | Plan → PLN
-   - Policy → POL | Procedure/SOP → PRC | Proposal → PRO | Presentation → PRS
-   - Report → RPT | Schedule → SCH | Template → TEM | Summary → SUM
-
-7. REVISION STATUS:
-   - Draft: RevA, RevB, RevC (letters for drafts)
-   - Final: Rev0 (first final), Rev1, Rev2 (subsequent finals)
-   - Draft after final: Rev0A, Rev0B (number + letter)
-
-=== STEP 2: CHOOSE FORMAT ===
-
-COURSE FORMAT (Faculty + Course content):
-Faculty-School_CourseCode_TermOffered_DocumentForm_Date_RevisionStatus.ext
-Example: FHSD-SoN_0386-0001_2024WT2_TEM_2025-01-10_Rev0.pptx
-
-ADVANCED FORMAT (Project code found):
-ProjectCode_Subject_DocumentForm_Date_RevisionStatus.ext
-Example: CPE_Records-Management_POL_2025-01-20_Rev0.pdf
-
-BASIC FORMAT (minimal info):
-Subject_DocumentForm_Date_RevisionStatus.ext
-Example: Naming-Conventions_LPR_2025-03-11_RevA.docx
-
-=== STEP 3: RESPOND WITH JSON (no markdown) ===
-{{"suggestedName": "GeneratedFilename.pdf", "formatUsed": "course|advanced|basic", "extractedFields": {{"facultySchool": "FHSD-SoN or null", "courseCode": "0386-0001 or null", "term": "2024WT2 or null", "projectCode": "CPE or null", "subject": "Subject-In-Title-Kebab-Case", "documentForm": "CODE", "date": "YYYY-MM-DD", "revision": "Rev0"}}, "reasoning": "I found [text]. Faculty: [X]. School: [X]. Term: [X]. Document type: [X].", "confidence": 9}}"""
-            else:
-                # Actual image file (photo, screenshot, diagram)
-                image_prompt = f"""I need help creating a CPE-compliant filename for this image.
-
-IMPORTANT: First, carefully analyze what is shown in this image. Describe what you see in detail.
-
-Current filename: {file_name}
-
-Key elements for the filename:
-- Subject (required): What is actually shown in the image. Use Title-Kebab-Case (e.g., Campus-Building). MAX 50 CHARACTERS.
-- Document Form: Use IMG for photos, SCR for screenshots, DIA for diagrams
-- Date: Use today's date {today} if no date is visible
-- Revision: Use 'Rev0' for final version
-
-Respond with ONLY a JSON object:
-{{"suggestedName": "Content-Description_IMG_{today}_Rev0.{ext}", "reasoning": "I can see [description]. I chose [Subject] because [reason]. I used IMG/SCR/DIA because [reason].", "confidence": 8, "detectedType": "IMG", "suggestedSubject": "Subject-In-Title-Kebab-Case"}}"""
-
-            message = client.messages.create(
-                model="claude-sonnet-4-20250514",
-                max_tokens=1000,
-                messages=[{
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": image_prompt
-                        },
-                        {
-                            "type": "image",
-                            "source": {
-                                "type": "base64",
-                                "media_type": mime_type,
-                                "data": base64_data
-                            }
-                        }
-                    ]
-                }]
-            )
-        else:
-            # Text document analysis - send full content for best analysis
-            document_content = content[:6000]  # Allow more for Excel/text files
-
-            message = client.messages.create(
-                model="claude-sonnet-4-20250514",
-                max_tokens=1000,
-                messages=[{
-                    "role": "user",
-                    "content": f"""You are a file naming expert for UBC CPE (Continuing Professional Education). Analyze this document and suggest a CPE-compliant filename.
-
-Current file: {file_name}
-Today's date: {today}
-
-=== STEP 1: CHECK FOR FACULTY-SCHOOL (STRICT MATCHING ONLY) ===
-ONLY use Faculty-School codes if you find EXACT matches to these UBC Okanagan names:
-- "Irving K. Barber Faculty of Arts and Social Sciences" → IKBASS
-- "Irving K. Barber Faculty of Science" → IKBFOS
-- "Faculty of Creative and Critical Studies" → FCCS
-- "Okanagan School of Education" → OSE
-- "Faculty of Applied Science" + "School of Engineering" → APSC-SoE
-- "Faculty of Health and Social Development" → FHSD
-  - + "School of Nursing" → FHSD-SoN
-  - + "School of Social Work" → FHSD-SSW
-- "Faculty of Management" → FoM
-- "Faculty of Medicine" → MED
-- "College of Graduate Studies" → CoGS
-
-⚠️ DO NOT invent Faculty-School codes! If you don't see these EXACT faculty names, set facultySchool to null.
-⚠️ "CPE", "ITAL", "55PLUS", course abbreviations, etc. are NOT Faculty-School codes!
-
-=== STEP 2: EXTRACT OTHER FIELDS ===
-- COURSE CODE: Four digits + dash + four digits (e.g., 0386-0001). Must be this exact format.
-- TERM: Format YYYYST (e.g., 2025WT1). Only if you see clear term/session info.
-- PROJECT CODE: Only if explicitly labeled (e.g., "Project: CPE", "Account: XYZ")
-- SUBJECT: Use Title-Kebab-Case (e.g., Foundations-For-Restorative-Approach)
-  ⚠️ MAX 50 CHARACTERS for subject! Truncate at word boundary if longer.
-  Example: "Foundations For A Restorative Approach Health Care Harm And Wellbeing"
-  → Truncate to: "Foundations-For-A-Restorative-Approach-Health-Care" (50 chars)
-- DOCUMENT FORM: Match keywords to codes:
-  - Report/Enrollment/Count/Chart → RPT | Survey/Analysis → SRY | Summary → SUM
-  - Letter of Proficiency → LPR | Letter of Completion → LCO
-  - Guidelines/Guide → GUI | Manual → MNL | Template → TEM | Schedule → SCH
-  - Budget → BGT | Invoice → INV | Contract → CON | Form → FRM
-- REVISION: RevA/B/C for drafts, Rev0 for first final, Rev1/2 for subsequent
-
-=== STEP 3: CHOOSE FORMAT ===
-COURSE FORMAT (ONLY if you found valid Faculty-School AND course content):
-Faculty-School_CourseCode_Term_DocumentForm_Date_Revision.ext
-
-ADVANCED FORMAT (if project code is explicitly present):
-ProjectCode_Subject_DocumentForm_Date_Revision.ext
-
-BASIC FORMAT (default - use this for most files):
-Subject_DocumentForm_Date_Revision.ext
-Example: Enrollment-Count-Report_RPT_{today}_Rev0.xls
-
-=== STEP 4: RESPOND WITH JSON ===
-Content: {document_content}
-
-Respond with ONLY this JSON (no markdown):
-{{"suggestedName": "Filename.ext", "formatUsed": "course|advanced|basic", "extractedFields": {{"facultySchool": "CODE or null", "courseCode": "XXXX-XXXX or null", "term": "YYYYST or null", "projectCode": "CODE or null", "subject": "Subject-In-Title-Kebab-Case", "documentForm": "CODE", "date": "{today}", "revision": "Rev0"}}, "reasoning": "Explanation of what I found and why I chose each field.", "confidence": 8}}"""
-                }]
-            )
-
-        # Parse response
-        response_text = message.content[0].text
-
-        # Try to extract JSON from the response
-        try:
-            # Find JSON in response
-            json_match = re.search(r'\{[\s\S]*\}', response_text)
-            if json_match:
-                result = json.loads(json_match.group())
-                return {"success": True, "analysis": result}
-        except json.JSONDecodeError:
-            pass
-
-        # Fallback if JSON parsing fails
-        ext = file_name.split('.')[-1] if '.' in file_name else 'pdf'
-        return {
-            "success": True,
-            "analysis": {
-                "suggestedName": f"Document_{today}_Rev0.{ext}",
-                "reasoning": "AI analysis completed but response format was unclear",
-                "confidence": 5,
-                "detectedType": "unknown",
-                "suggestedSubject": "Document"
-            }
-        }
-
-    except anthropic.AuthenticationError:
-        return {"success": False, "error": "Invalid API key. Please check your Claude API key."}
-    except anthropic.RateLimitError:
-        return {"success": False, "error": "Rate limit exceeded. Please wait a moment and try again."}
-    except Exception as e:
-        return {"success": False, "error": str(e)}
-
-
-def analyze_with_gemini(api_key: str, content: str, file_name: str, content_type: str, privacy_level: str) -> dict:
-    """Analyze file content with Gemini via OpenRouter API.
-
-    Uses google/gemini-2.5-flash model through OpenRouter.
-    """
-    try:
-        today = datetime.now().strftime("%Y-%m-%d")
-
-        # Build the prompt
-        base_prompt = f"""You are a file naming expert for UBC CPE (Continuing Professional Education). Analyze this document and suggest a CPE-compliant filename.
-
-Current file: {file_name}
-Today's date: {today}
-
-=== STEP 1: CHECK FOR FACULTY-SCHOOL (STRICT MATCHING ONLY) ===
-ONLY use Faculty-School codes if you find EXACT matches to these UBC Okanagan names:
-- "Irving K. Barber Faculty of Arts and Social Sciences" → IKBASS
-- "Irving K. Barber Faculty of Science" → IKBFOS
-- "Faculty of Creative and Critical Studies" → FCCS
-- "Okanagan School of Education" → OSE
-- "Faculty of Applied Science" + "School of Engineering" → APSC-SoE
-- "Faculty of Health and Social Development" → FHSD
-  - + "School of Nursing" → FHSD-SoN
-  - + "School of Social Work" → FHSD-SSW
-- "Faculty of Management" → FoM
-- "Faculty of Medicine" → MED
-- "College of Graduate Studies" → CoGS
-
-⚠️ DO NOT invent Faculty-School codes! If you don't see these EXACT faculty names, set facultySchool to null.
-⚠️ "CPE", "ITAL", "55PLUS", course abbreviations, etc. are NOT Faculty-School codes!
-
-=== STEP 2: EXTRACT OTHER FIELDS ===
-- COURSE CODE: Four digits + dash + four digits (e.g., 0386-0001). Must be this exact format.
-- TERM: Format YYYYST (e.g., 2025WT1). Only if you see clear term/session info.
-- PROJECT CODE: Only if explicitly labeled (e.g., "Project: CPE", "Account: XYZ")
-- SUBJECT: Use Title-Kebab-Case (e.g., Foundations-For-Restorative-Approach)
-  ⚠️ MAX 50 CHARACTERS for subject! Truncate at word boundary if longer.
-  Example: "Foundations For A Restorative Approach Health Care Harm And Wellbeing"
-  → Truncate to: "Foundations-For-A-Restorative-Approach-Health-Care" (50 chars)
-- DOCUMENT FORM: Match keywords to codes:
-  LETTERS & CERTIFICATES:
-  - "Letter of Proficiency" → LPR | "Letter of Completion" → LCO
-  - "Letter of Attendance" → LAT | "Letter of Participation" → LPA
-
-  COMMON TYPES:
-  - Report/Count/Chart → RPT | Survey/Analysis → SRY | Summary → SUM
-  - Guidelines/Guide → GUI | Manual → MNL | Template → TEM | Schedule → SCH
-  - Budget → BGT | Invoice → INV | Contract → CON | Form → FRM
-  - Agenda → AGD | Minutes → MIN | Policy → POL | Procedure → PRC
-  - Presentation → PRS | Plan → PLN | Proposal → PRO
-  - Diagram/Chart → DIA | Screenshot → SCR | Image → IMG
-
-- REVISION: RevA/B/C for drafts, Rev0 for first final, Rev1/2 for subsequent
-
-=== STEP 3: CHOOSE FORMAT ===
-COURSE FORMAT (ONLY if you found valid Faculty-School AND course content):
-Faculty-School_CourseCode_Term_DocumentForm_Date_Revision.ext
-
-ADVANCED FORMAT (if project code is explicitly present):
-ProjectCode_Subject_DocumentForm_Date_Revision.ext
-
-BASIC FORMAT (default - use this for most files):
-Subject_DocumentForm_Date_Revision.ext
-Example: Enrollment-Count-Report_RPT_{today}_Rev0.xls
-
-=== STEP 4: RESPOND WITH JSON (no markdown, no code blocks) ===
-{{"suggestedName": "Filename.ext", "formatUsed": "course|advanced|basic", "extractedFields": {{"facultySchool": "CODE or null", "courseCode": "XXXX-XXXX or null", "term": "YYYYST or null", "projectCode": "CODE or null", "subject": "Subject-In-Title-Kebab-Case", "documentForm": "CODE", "date": "{today}", "revision": "Rev0"}}, "reasoning": "Explanation of what I found and why I chose each field.", "confidence": 8}}"""
-
-        if content_type == "image":
-            # Image analysis with Gemini via OpenRouter
-            mime_type = content.split(';')[0].replace('data:', '')
-            base64_data = content.split(',')[1]
-
-            # Determine if this is likely a PDF (rendered as image) or actual image
-            is_pdf = file_name.lower().endswith('.pdf')
-            ext = "pdf" if is_pdf else file_name.split('.')[-1] if '.' in file_name else "jpg"
-
-            if is_pdf:
-                # PDF rendered as image - Gemini analysis with OCR
-                image_prompt = f"""You are a file naming expert for UBC CPE (Continuing Professional Education). READ ALL TEXT in this PDF document image carefully.
-
-Current filename: {file_name}
-Today's date: {today}
-
-=== STEP 1: EXTRACT ALL AVAILABLE FIELDS ===
-
-1. FACULTY-SCHOOL (use dash between Faculty and School):
-   UBC Okanagan Faculties & Schools - use these abbreviations:
-   - "Irving K. Barber Faculty of Arts and Social Sciences" → IKBASS
-   - "Irving K. Barber Faculty of Science" → IKBFOS (or IKB-FOS if with school)
-   - "Faculty of Creative and Critical Studies" → FCCS
-   - "Okanagan School of Education" → OSE
-   - "Faculty of Applied Science" / "School of Engineering" → APSC-SoE
-   - "Faculty of Health and Social Development" → FHSD
-     - with "School of Nursing" → FHSD-SoN
-     - with "School of Social Work" → FHSD-SSW
-     - with "School of Health and Exercise Sciences" → FHSD-SHES
-   - "Faculty of Management" → FoM
-   - "Faculty of Medicine" → MED
-   - "College of Graduate Studies" → CoGS
-
-   FORMAT: Faculty-School with dash (e.g., FHSD-SoN, APSC-SoE)
-   If only Faculty found (no specific school), just use Faculty code (e.g., FCCS)
-
-2. COURSE CODE - Four digits + dash + four digits (e.g., 0386-0001)
-   Look for course numbers, section codes
-
-3. TERM OFFERED - Format: YYYYST (Year + Session + Term)
-   - Session: W = Winter (Sept-Apr), S = Summer (May-Aug)
-   - Term: 1 or 2
-   - Sept-Dec → WT1 | Jan-Apr → WT2 | May-Jun → ST1 | Jul-Aug → ST2
-   - Example: "December 2025" → 2025WT1
-   - Example: "March 2026" → 2025WT2 (still Winter session)
-
-4. PROJECT/ACCOUNT CODE - Project numbers, grant codes (e.g., CPE, PROJ2024)
-
-5. SUBJECT - Use Title-Kebab-Case (e.g., Wildland-Fire-Ecology)
-   ⚠️ MAX 50 CHARACTERS! Truncate at word boundary if longer.
-   Example: "Foundations-For-A-Restorative-Approach-Health-Care" (50 chars max)
-
-6. DOCUMENT FORM codes:
-   LETTERS & CERTIFICATES:
-   - "Letter of Proficiency" → LPR | "Letter of Completion" → LCO
-   - "Letter of Attendance" → LAT | "Letter of Participation" → LPA
-   - "Non-Credit Certificate" → NCC | "MicroCertificate" → NCM
-
-   COMMON TYPES:
-   - Agenda → AGD | Agreement → AGR | Budget → BGT | Contract → CON
-   - Form → FRM | Guidelines/Guide → GUI | Instructions → INS | Invoice → INV
-   - Letter (general) → LTR | Minutes → MIN | Manual → MNL | Plan → PLN
-   - Policy → POL | Procedure/SOP → PRC | Proposal → PRO | Presentation → PRS
-   - Report → RPT | Schedule → SCH | Template → TEM | Summary → SUM
-
-7. REVISION STATUS:
-   - Draft: RevA, RevB, RevC (letters for drafts)
-   - Final: Rev0 (first final), Rev1, Rev2 (subsequent finals)
-   - Draft after final: Rev0A, Rev0B (number + letter)
-
-=== STEP 2: CHOOSE FORMAT ===
-
-COURSE FORMAT (Faculty + Course content):
-Faculty-School_CourseCode_TermOffered_DocumentForm_Date_RevisionStatus.ext
-Example: FHSD-SoN_0386-0001_2024WT2_TEM_2025-01-10_Rev0.pptx
-
-ADVANCED FORMAT (Project code found):
-ProjectCode_Subject_DocumentForm_Date_RevisionStatus.ext
-Example: CPE_Records-Management_POL_2025-01-20_Rev0.pdf
-
-BASIC FORMAT (minimal info):
-Subject_DocumentForm_Date_RevisionStatus.ext
-Example: Naming-Conventions_LPR_2025-03-11_RevA.docx
-
-=== STEP 3: RESPOND WITH JSON (no markdown, no code blocks) ===
-{{"suggestedName": "GeneratedFilename.pdf", "formatUsed": "course|advanced|basic", "extractedFields": {{"facultySchool": "FHSD-SoN or null", "courseCode": "0386-0001 or null", "term": "2024WT2 or null", "projectCode": "CPE or null", "subject": "Subject-In-Title-Kebab-Case", "documentForm": "CODE", "date": "YYYY-MM-DD", "revision": "Rev0"}}, "reasoning": "I found [text]. Faculty: [X]. School: [X]. Term: [X]. Document type: [X].", "confidence": 9}}"""
-            else:
-                # Actual image file (photo, screenshot, diagram)
-                image_prompt = f"""I need help creating a CPE-compliant filename for this image.
-
-IMPORTANT: First, carefully analyze what is shown in this image. Describe what you see in detail.
-
-Current filename: {file_name}
-
-Key elements for the filename:
-- Subject (required): What is actually shown in the image. Use Title-Kebab-Case (e.g., Campus-Building). MAX 50 CHARACTERS.
-- Document Form: Use IMG for photos, SCR for screenshots, DIA for diagrams
-- Date: Use today's date {today} if no date is visible
-- Revision: Use 'Rev0' for final version
-
-Respond with ONLY a JSON object (no markdown, no code blocks):
-{{"suggestedName": "Content-Description_IMG_{today}_Rev0.{ext}", "reasoning": "I can see [description]. I chose [Subject] because [reason]. I used IMG/SCR/DIA because [reason].", "confidence": 8, "detectedType": "IMG", "suggestedSubject": "Subject-In-Title-Kebab-Case"}}"""
-
-            # OpenRouter request with image
-            messages = [{
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:{mime_type};base64,{base64_data}"
-                        }
-                    },
-                    {
-                        "type": "text",
-                        "text": image_prompt
-                    }
-                ]
-            }]
-        else:
-            # Text document analysis - send full content for best analysis
-            document_content = content[:4000]  # Limit to 4000 chars for API
-            full_prompt = base_prompt + f"\n\nContent: {document_content}"
-
-            messages = [{
-                "role": "user",
-                "content": full_prompt
-            }]
-
-        # Make OpenRouter API request
-        response = requests.post(
-            OPENROUTER_BASE_URL,
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-                "HTTP-Referer": "https://ubc-cpe-naming-tool.streamlit.app",
-                "X-Title": "UBC CPE File Naming Tool"
-            },
-            json={
-                "model": GEMINI_MODEL,
-                "messages": messages
-            },
-            timeout=60
-        )
-
-        if response.status_code != 200:
-            error_data = response.json() if response.text else {}
-            error_msg = error_data.get("error", {}).get("message", f"HTTP {response.status_code}")
-            return {"success": False, "error": f"API error: {error_msg}"}
-
-        # Parse response
-        result_data = response.json()
-        response_text = result_data["choices"][0]["message"]["content"]
-
-        # Try to extract JSON from the response
-        try:
-            # Remove markdown code blocks if present
-            cleaned_response = re.sub(r'```json\s*', '', response_text)
-            cleaned_response = re.sub(r'```\s*', '', cleaned_response)
-            cleaned_response = cleaned_response.strip()
-
-            # Find JSON in response
-            json_match = re.search(r'\{[\s\S]*\}', cleaned_response)
-            if json_match:
-                result = json.loads(json_match.group())
-                return {"success": True, "analysis": result}
-        except json.JSONDecodeError:
-            pass
-
-        # Fallback if JSON parsing fails
-        ext = file_name.split('.')[-1] if '.' in file_name else 'pdf'
-        return {
-            "success": True,
-            "analysis": {
-                "suggestedName": f"Document_{today}_Rev0.{ext}",
-                "reasoning": "AI analysis completed but response format was unclear",
-                "confidence": 5,
-                "detectedType": "unknown",
-                "suggestedSubject": "Document"
-            }
-        }
-
-    except requests.exceptions.Timeout:
-        return {"success": False, "error": "Request timed out. Please try again."}
-    except requests.exceptions.RequestException as e:
-        return {"success": False, "error": f"Network error: {str(e)}"}
-    except Exception as e:
-        error_msg = str(e)
-        if "429" in error_msg:
-            return {"success": False, "error": "Rate limit reached. Please wait a moment and try again."}
-        return {"success": False, "error": f"Error: {error_msg[:200]}"}
-
-
-def generate_filename(format_type: str, subject: str, date_val: datetime, revision: str,
-                     extension: str, project_code: str = "", document_form: str = "",
-                     faculty_school: str = "", course_code: str = "", term: str = "") -> tuple:
-    """Generate CPE-compliant filename. Returns (standard_filename, sharepoint_filename)."""
-
-    formatted_date = date_val.strftime("%Y-%m-%d")
-    elements = []
-
-    if format_type == "basic":
-        elements = [subject, formatted_date, f"Rev{revision}"]
-    elif format_type == "advanced":
-        if project_code:
-            elements.append(project_code)
-        elements.append(subject)
-        if document_form:
-            elements.append(document_form)
-        elements.append(formatted_date)
-        elements.append(f"Rev{revision}")
-    elif format_type == "course":
-        if faculty_school:
-            elements.append(faculty_school)
-        if course_code:
-            elements.append(course_code)
-        if term:
-            elements.append(term)
-        elements.append(subject)
-        if document_form:
-            elements.append(document_form)
-        elements.append(formatted_date)
-        elements.append(f"Rev{revision}")
-
-    standard_filename = "_".join(elements) + "." + extension
-    sharepoint_filename = " ".join(elements) + "." + extension
-
-    return standard_filename, sharepoint_filename
-
-
-def generate_file_location_path(is_partner_related: bool, cpe_block: str = "", cpe_subcat: str = "",
-                                 partner: str = "", phase: str = "", subject_area: str = "",
-                                 credential: str = "", applies_to_all: bool = True,
-                                 occurrence: str = "", file_type: str = "") -> tuple:
-    """Generate file location path based on selections.
-    
-    Returns (breadcrumb_path, folder_path)
-    """
-    breadcrumb_parts = []
-    folder_parts = []
-    
-    if not is_partner_related:
-        # CPE Internal path
-        breadcrumb_parts.append("CPE Internal")
-        folder_parts.append("CPE Internal")
-        
-        if cpe_block:
-            block_name = CPE_INTERNAL_BLOCKS.get(cpe_block, cpe_block)
-            breadcrumb_parts.append(block_name)
-            folder_parts.append(block_name)
-            
-            if cpe_subcat:
-                breadcrumb_parts.append(cpe_subcat)
-                folder_parts.append(cpe_subcat)
-    else:
-        # Partner-related path
-        if partner:
-            partner_name = partner  # Use the code as folder name
-            breadcrumb_parts.append(f"Partner ({partner_name})")
-            folder_parts.append(partner_name)
-            
-            if phase:
-                breadcrumb_parts.append(phase)
-                folder_parts.append(phase)
-                
-                if phase == "Definition and Approvals":
-                    # Definition & Approvals: Partner → Phase → Subject Area → file type
-                    if subject_area:
-                        breadcrumb_parts.append(subject_area)
-                        folder_parts.append(subject_area)
-                        
-                        if file_type:
-                            breadcrumb_parts.append(file_type)
-                            folder_parts.append(file_type)
-                else:  # Production & Delivery
-                    # Production & Delivery: Partner → Phase → Credential → (occurrence) → file type
-                    if credential:
-                        breadcrumb_parts.append(credential)
-                        folder_parts.append(credential)
-                        
-                        if not applies_to_all and occurrence:
-                            breadcrumb_parts.append(occurrence)
-                            folder_parts.append(occurrence)
-                        
-                        if file_type:
-                            breadcrumb_parts.append(file_type)
-                            folder_parts.append(file_type)
-    
-    breadcrumb_path = " → ".join(breadcrumb_parts)
-    folder_path = " / ".join(folder_parts)
-    
-    return breadcrumb_path, folder_path
-
-
-# Main app header
 st.markdown("""
 <div class="main-header">
-    <h1>UBC CPE File Naming Tool <span class="version-badge">V2 Web</span></h1>
+    <h1>UBC CPE File Naming Tool <span class="version-badge">V3</span></h1>
     <p style="color: #666;">Generate standardized filenames, find file locations, and analyze files with AI</p>
 </div>
 """, unsafe_allow_html=True)
 
-# Main tabs
-tab1, tab2, tab3 = st.tabs(["📝 Manual Generator", "📁 File Location", "🤖 AI File Analyzer"])
+# ─── Main Tabs ─────────────────────────────────────────────────────────────
+
+tab1, tab2, tab3, tab4 = st.tabs([
+    "\U0001f4dd Manual Generator",
+    "\U0001f4c1 File Location",
+    "\U0001f916 AI File Analyzer",
+    "\U0001f4ca Dashboard",
+])
+
 
 # ==================== MANUAL GENERATOR TAB ====================
 with tab1:
@@ -1095,25 +153,55 @@ with tab1:
         help_topic = st.selectbox(
             "Select a field to learn more:",
             [""] + list(HELP_CONTENT.keys()),
-            format_func=lambda x: HELP_CONTENT[x]["title"] if x else "Select a field..."
+            format_func=lambda x: HELP_CONTENT[x]["title"] if x else "Select a field...",
         )
 
         if help_topic:
-            st.info(f"**{HELP_CONTENT[help_topic]['title']}**\n\n{HELP_CONTENT[help_topic]['content']}")
-        st.markdown('</div>', unsafe_allow_html=True)
+            st.info(
+                f"**{HELP_CONTENT[help_topic]['title']}**\n\n{HELP_CONTENT[help_topic]['content']}"
+            )
+
+        # Template section
+        st.divider()
+        st.subheader("Templates")
+        templates = get_all_templates(st.session_state)
+        template_choice = st.selectbox(
+            "Load a template:",
+            [""] + list(templates.keys()),
+            format_func=lambda x: x if x else "Select a template...",
+            key="template_selector",
+        )
+
+        if template_choice and template_choice in templates:
+            if st.button("Apply Template", use_container_width=True):
+                tmpl = templates[template_choice]
+                st.session_state["tmpl_format"] = tmpl.get("format_type", "basic")
+                st.session_state["tmpl_faculty"] = tmpl.get("faculty_school", "")
+                st.session_state["tmpl_project"] = tmpl.get("project_code", "")
+                st.session_state["tmpl_docform"] = tmpl.get("document_form", "")
+                st.session_state["tmpl_revision"] = tmpl.get("revision", "0")
+                st.session_state["tmpl_extension"] = tmpl.get("extension", "pdf")
+                st.rerun()
+
+        st.markdown("</div>", unsafe_allow_html=True)
 
     with col2:
         # Format selector
         st.subheader("Choose Naming Format")
+
+        # Use template values if set
+        default_format = st.session_state.pop("tmpl_format", "basic")
+        format_options = ["basic", "advanced", "course"]
         format_type = st.radio(
             "Format",
-            ["basic", "advanced", "course"],
+            format_options,
+            index=format_options.index(default_format) if default_format in format_options else 0,
             format_func=lambda x: {
                 "basic": "Basic Format - For simple documents",
                 "advanced": "Advanced Format - For departmental/project documents",
-                "course": "Course-Specific Format - For educational materials"
+                "course": "Course-Specific Format - For educational materials",
             }[x],
-            horizontal=True
+            horizontal=True,
         )
 
         st.divider()
@@ -1125,98 +213,176 @@ with tab1:
             subject = st.text_input(
                 "Subject/Activity *",
                 placeholder="e.g., NamingConventions",
-                help="Use PascalCase (capitalize first letter of each word, no spaces)"
+                help="Use PascalCase (capitalize first letter of each word, no spaces)",
             )
             # Auto-format subject
             if subject:
-                subject = re.sub(r'\s+', '', subject)
+                subject = re.sub(r"\s+", "", subject)
                 if subject:
                     subject = subject[0].upper() + subject[1:]
 
             date_val = st.date_input("Date *", value=datetime.now())
 
+            default_rev = st.session_state.pop("tmpl_revision", "0")
+            rev_keys = list(REVISION_STATUSES.keys())
             revision = st.selectbox(
                 "Revision Status *",
-                list(REVISION_STATUSES.keys()),
+                rev_keys,
                 format_func=lambda x: REVISION_STATUSES[x],
-                index=3  # Default to "0"
+                index=rev_keys.index(default_rev) if default_rev in rev_keys else 3,
             )
 
         with col_b:
+            default_ext = st.session_state.pop("tmpl_extension", "pdf")
+            ext_keys = list(FILE_EXTENSIONS.keys())
             extension = st.selectbox(
                 "File Extension",
-                list(FILE_EXTENSIONS.keys()),
-                format_func=lambda x: FILE_EXTENSIONS[x]
+                ext_keys,
+                format_func=lambda x: FILE_EXTENSIONS[x],
+                index=ext_keys.index(default_ext) if default_ext in ext_keys else 0,
             )
 
             # Advanced fields
-            if format_type in ["advanced", "course"]:
+            if format_type in ("advanced", "course"):
+                default_proj = st.session_state.pop("tmpl_project", "")
                 project_code = st.text_input(
                     "Project/Account Number",
+                    value=default_proj,
                     placeholder="e.g., CPE",
-                    help="Optional: Control number, project code, or account identifier"
+                    help="Optional: Control number, project code, or account identifier",
                 )
 
+                default_docform = st.session_state.pop("tmpl_docform", "")
+                doc_keys = list(DOCUMENT_FORMS.keys())
                 document_form = st.selectbox(
                     "Document Form",
-                    list(DOCUMENT_FORMS.keys()),
-                    format_func=lambda x: DOCUMENT_FORMS[x]
+                    doc_keys,
+                    format_func=lambda x: DOCUMENT_FORMS[x],
+                    index=doc_keys.index(default_docform) if default_docform in doc_keys else 0,
                 )
             else:
+                project_code = st.session_state.pop("tmpl_project", "")
+                document_form = st.session_state.pop("tmpl_docform", "")
                 project_code = ""
                 document_form = ""
 
             # Course-specific fields
             if format_type == "course":
+                default_faculty = st.session_state.pop("tmpl_faculty", "")
                 faculty_school = st.text_input(
                     "Faculty-School",
+                    value=default_faculty,
                     placeholder="e.g., FHSD-SoN",
-                    help="Use dash to separate faculty and school"
+                    help="Use dash to separate faculty and school",
                 )
 
                 course_code = st.text_input(
                     "Course Code",
                     placeholder="e.g., 0386-0001",
-                    help="Four-digit number followed by four-digit section code"
+                    help="Four-digit number followed by four-digit section code",
                 )
 
                 term = st.text_input(
                     "Term Offered",
                     placeholder="e.g., 2024WT2",
-                    help="Format: YYYYST (Year + Session + Term)"
+                    help="Format: YYYYST (Year + Session + Term)",
                 )
             else:
+                st.session_state.pop("tmpl_faculty", None)
                 faculty_school = ""
                 course_code = ""
                 term = ""
 
-        # Generate button
-        if st.button("Generate Filename", type="primary", use_container_width=True):
+        # Buttons row
+        btn_col1, btn_col2, btn_col3 = st.columns([2, 1, 1])
+
+        with btn_col1:
+            generate_clicked = st.button(
+                "Generate Filename",
+                type="primary",
+                use_container_width=True,
+            )
+
+        with btn_col2:
+            if st.button("Clear Form", use_container_width=True):
+                for key in ["template_selector"]:
+                    if key in st.session_state:
+                        del st.session_state[key]
+                st.rerun()
+
+        with btn_col3:
+            save_template = st.button("Save as Template", use_container_width=True)
+
+        # Save template dialog
+        if save_template and subject:
+            template_name = st.text_input("Template name:", key="new_template_name")
+            if template_name and st.button("Confirm Save"):
+                save_custom_template(
+                    st.session_state,
+                    template_name,
+                    {
+                        "format_type": format_type,
+                        "faculty_school": faculty_school,
+                        "project_code": project_code,
+                        "document_form": document_form,
+                        "revision": revision,
+                        "extension": extension,
+                    },
+                )
+                st.success(f"Template '{template_name}' saved!")
+
+        if generate_clicked:
             if not subject or not date_val or not revision:
                 st.error("Please fill in all required fields (Subject, Date, and Revision Status).")
             else:
-                standard_name, sharepoint_name = generate_filename(
-                    format_type, subject, date_val, revision, extension,
-                    project_code, document_form, faculty_school, course_code, term
+                # Validate inputs
+                validation_errors = validate_all_fields(
+                    format_type, subject, project_code, document_form,
+                    faculty_school, course_code, term,
                 )
 
-                st.markdown('<div class="output-box">', unsafe_allow_html=True)
-                st.subheader("Generated Filename")
+                for err in validation_errors:
+                    if err.level == "error":
+                        st.error(err.message)
+                    elif err.level == "warning":
+                        st.warning(err.message)
 
-                # Standard filename
-                st.text_input("CPE Standard Filename:", value=standard_name, key="standard_output")
-                char_count = len(standard_name)
-                if char_count > 150:
-                    st.error(f"⚠️ {char_count} characters - Too long! May cause system issues")
-                elif char_count > 100:
-                    st.warning(f"⚠️ {char_count} characters - Consider shortening")
-                else:
-                    st.success(f"✓ {char_count} characters")
+                if not any(e.level == "error" for e in validation_errors):
+                    standard_name, sharepoint_name = generate_filename(
+                        format_type, subject, date_val, revision, extension,
+                        project_code, document_form, faculty_school, course_code, term,
+                    )
 
-                # SharePoint filename
-                st.text_input("SharePoint Filename (spaces):", value=sharepoint_name, key="sharepoint_output")
+                    # Track analytics
+                    track_filename_generated(
+                        st.session_state, format_type, document_form, faculty_school,
+                    )
 
-                st.markdown('</div>', unsafe_allow_html=True)
+                    st.markdown('<div class="output-box">', unsafe_allow_html=True)
+                    st.subheader("Generated Filename")
+
+                    # Standard filename
+                    st.text_input(
+                        "CPE Standard Filename:",
+                        value=standard_name,
+                        key="standard_output",
+                    )
+                    length_check = check_filename_length(standard_name)
+                    if length_check.level == "error":
+                        st.error(f"\u26a0\ufe0f {length_check.message}")
+                    elif length_check.level == "warning":
+                        st.warning(f"\u26a0\ufe0f {length_check.message}")
+                    else:
+                        st.success(f"\u2713 {length_check.message}")
+
+                    # SharePoint filename
+                    st.text_input(
+                        "SharePoint Filename (spaces):",
+                        value=sharepoint_name,
+                        key="sharepoint_output",
+                    )
+
+                    st.markdown("</div>", unsafe_allow_html=True)
 
 
 # ==================== FILE LOCATION TAB ====================
@@ -1226,17 +392,20 @@ with tab2:
     with col1:
         st.markdown('<div class="help-panel">', unsafe_allow_html=True)
         st.subheader("Quick Guide")
-        
+
         location_help_topic = st.selectbox(
             "Learn more about:",
             [""] + list(FILE_LOCATION_HELP.keys()),
             format_func=lambda x: FILE_LOCATION_HELP[x]["title"] if x else "Select a topic...",
-            key="location_help"
+            key="location_help",
         )
-        
+
         if location_help_topic:
-            st.info(f"**{FILE_LOCATION_HELP[location_help_topic]['title']}**\n\n{FILE_LOCATION_HELP[location_help_topic]['content']}")
-        
+            st.info(
+                f"**{FILE_LOCATION_HELP[location_help_topic]['title']}**\n\n"
+                f"{FILE_LOCATION_HELP[location_help_topic]['content']}"
+            )
+
         st.divider()
         st.markdown("**Common File Types:**")
         st.markdown("""
@@ -1246,25 +415,27 @@ with tab2:
         - **Course Management** - Syllabi, schedules, attendance
         - **Course Development** - Curriculum, learning outcomes
         """)
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
     with col2:
         st.subheader("Where Does This File Go?")
         st.markdown("Answer the questions below to find the correct folder location for your file.")
-        
+
         st.divider()
-        
+
         # Question 1: Partner-related or CPE Internal?
         is_partner_related = st.radio(
             "**Is this file tied to a specific partner (faculty/school)?**",
             [True, False],
-            format_func=lambda x: "Yes - Related to a specific partner's program" if x else "No - General CPE operations",
+            format_func=lambda x: "Yes - Related to a specific partner's program"
+            if x
+            else "No - General CPE operations",
             horizontal=True,
-            key="is_partner"
+            key="is_partner",
         )
-        
+
         st.divider()
-        
+
         # Initialize variables
         cpe_block = ""
         cpe_subcat = ""
@@ -1275,124 +446,136 @@ with tab2:
         applies_to_all = True
         occurrence = ""
         file_type = ""
-        
+
         if not is_partner_related:
-            # CPE Internal path
             st.markdown("### CPE Internal")
-            
+
             cpe_block = st.selectbox(
                 "**What function does this file support?**",
                 list(CPE_INTERNAL_BLOCKS.keys()),
                 format_func=lambda x: CPE_INTERNAL_BLOCKS[x],
-                key="cpe_block"
+                key="cpe_block",
             )
-            
-            # Show sub-categories if applicable
+
             if cpe_block in CPE_INTERNAL_SUBCATEGORIES:
                 cpe_subcat = st.selectbox(
                     "**Select sub-category:**",
                     list(CPE_INTERNAL_SUBCATEGORIES[cpe_block].keys()),
                     format_func=lambda x: CPE_INTERNAL_SUBCATEGORIES[cpe_block][x],
-                    key="cpe_subcat"
+                    key="cpe_subcat",
                 )
         else:
-            # Partner-related path
             st.markdown("### Partner-Related")
-            
+
             partner = st.selectbox(
                 "**Which partner?**",
                 list(PARTNERS.keys()),
                 format_func=lambda x: PARTNERS[x],
-                key="partner"
+                key="partner",
             )
-            
+
             if partner:
                 phase = st.radio(
                     "**Is this about developing a new program or running an active one?**",
                     ["Definition and Approvals", "Production and Delivery"],
                     format_func=lambda x: {
                         "Definition and Approvals": "Definition & Approvals - Getting a program started (proposals, market research)",
-                        "Production and Delivery": "Production & Delivery - Running an active program"
+                        "Production and Delivery": "Production & Delivery - Running an active program",
                     }[x],
-                    key="phase"
+                    key="phase",
                 )
-                
+
                 if phase == "Definition and Approvals":
-                    # Definition & Approvals uses Subject Area
                     subject_area = st.text_input(
                         "**Subject Area** (e.g., Nursing Foundations, Wildland Fire Management)",
                         placeholder="Enter subject area name...",
-                        key="subject_area"
+                        key="subject_area",
                     )
-                    
+
                     file_type = st.selectbox(
                         "**What type of file is this?**",
                         list(DEFINITION_APPROVALS_BLOCKS.keys()),
                         format_func=lambda x: DEFINITION_APPROVALS_BLOCKS[x],
-                        key="def_file_type"
+                        key="def_file_type",
                     )
-                else:  # Production & Delivery
-                    # Production & Delivery goes straight to Credential (no Subject Area)
+                else:
                     credential = st.text_input(
                         "**Credential name** (e.g., Fundamentals of Wildland Fire Ecology and Management)",
                         placeholder="Enter credential name...",
-                        key="credential"
+                        key="credential",
                     )
-                    
+
                     if credential:
                         applies_to_all = st.radio(
                             "**Does this file apply to all offerings or a specific term?**",
                             [True, False],
-                            format_func=lambda x: "All offerings of this credential" if x else "A specific term/occurrence",
+                            format_func=lambda x: "All offerings of this credential"
+                            if x
+                            else "A specific term/occurrence",
                             horizontal=True,
-                            key="applies_to_all"
+                            key="applies_to_all",
                         )
-                        
+
                         if not applies_to_all:
                             st.markdown("**Build occurrence code:**")
                             occ_col1, occ_col2, occ_col3 = st.columns(3)
-                            
+
                             with occ_col1:
                                 occ_year = st.selectbox(
                                     "Year",
                                     [str(y) for y in range(2020, 2031)],
-                                    index=5,  # Default to 2025
-                                    key="occ_year"
+                                    index=5,
+                                    key="occ_year",
                                 )
-                            
+
                             with occ_col2:
                                 occ_session = st.selectbox(
                                     "Session",
                                     ["W", "S"],
-                                    format_func=lambda x: "W - Winter (Sept-Apr)" if x == "W" else "S - Summer (May-Aug)",
-                                    key="occ_session"
+                                    format_func=lambda x: "W - Winter (Sept-Apr)"
+                                    if x == "W"
+                                    else "S - Summer (May-Aug)",
+                                    key="occ_session",
                                 )
-                            
+
                             with occ_col3:
                                 occ_term = st.selectbox(
                                     "Term",
                                     ["1", "2"],
                                     format_func=lambda x: {
                                         "1": "T1 - First term",
-                                        "2": "T2 - Second term"
+                                        "2": "T2 - Second term",
                                     }[x],
-                                    key="occ_term"
+                                    key="occ_term",
                                 )
-                            
+
                             occurrence = f"{occ_year}{occ_session}T{occ_term}"
                             st.markdown(f"**Occurrence code:** `{occurrence}`")
-                    
+
                     file_type = st.selectbox(
                         "**What type of file is this?**",
                         list(PRODUCTION_DELIVERY_BLOCKS.keys()),
                         format_func=lambda x: PRODUCTION_DELIVERY_BLOCKS[x],
-                        key="prod_file_type"
+                        key="prod_file_type",
                     )
-        
+
         st.divider()
-        
-        # Generate location button
-        if st.button("📁 Show File Location", type="primary", use_container_width=True):
+
+        # Buttons row
+        loc_btn_col1, loc_btn_col2 = st.columns([3, 1])
+
+        with loc_btn_col1:
+            show_location = st.button(
+                "\U0001f4c1 Show File Location",
+                type="primary",
+                use_container_width=True,
+            )
+
+        with loc_btn_col2:
+            if st.button("Clear", use_container_width=True, key="clear_location"):
+                st.rerun()
+
+        if show_location:
             # Validate inputs
             valid = True
             if not is_partner_related:
@@ -1409,7 +592,7 @@ with tab2:
                 elif phase == "Production and Delivery" and not credential:
                     st.error("Please enter a credential name.")
                     valid = False
-            
+
             if valid:
                 breadcrumb_path, folder_path = generate_file_location_path(
                     is_partner_related=is_partner_related,
@@ -1421,36 +604,46 @@ with tab2:
                     credential=credential,
                     applies_to_all=applies_to_all,
                     occurrence=occurrence,
-                    file_type=file_type
+                    file_type=file_type,
                 )
-                
+
+                # Track analytics
+                track_location_generated(st.session_state)
+
                 st.markdown('<div class="location-result">', unsafe_allow_html=True)
-                st.subheader("📁 File Location")
-                
-                # Display breadcrumb path
+                st.subheader("\U0001f4c1 File Location")
+
                 st.markdown("**Navigation path:**")
-                st.markdown(f'<div class="location-path">{breadcrumb_path}</div>', unsafe_allow_html=True)
-                
-                # Display folder path
+                st.markdown(
+                    f'<div class="location-path">{breadcrumb_path}</div>',
+                    unsafe_allow_html=True,
+                )
+
                 st.markdown("**Folder structure:**")
                 st.code(folder_path, language=None)
-                
-                # Copy-friendly version
+
                 st.text_input("Copy path:", value=folder_path, key="copy_path")
-                
-                st.markdown('</div>', unsafe_allow_html=True)
-                
-                # Show helpful context
+
+                st.markdown("</div>", unsafe_allow_html=True)
+
                 if not is_partner_related:
-                    st.info("💡 **Tip:** CPE Internal files are for general operations not tied to any specific partner program.")
+                    st.info(
+                        "\U0001f4a1 **Tip:** CPE Internal files are for general operations not tied to any specific partner program."
+                    )
                 else:
                     if phase == "Definition and Approvals":
-                        st.info("💡 **Tip:** Definition & Approvals is for files about getting a new program started - proposals, market research, initial development.")
+                        st.info(
+                            "\U0001f4a1 **Tip:** Definition & Approvals is for files about getting a new program started."
+                        )
                     else:
                         if applies_to_all:
-                            st.info("💡 **Tip:** Credential-level files apply to ALL offerings (e.g., master syllabus, program brochure).")
+                            st.info(
+                                "\U0001f4a1 **Tip:** Credential-level files apply to ALL offerings (e.g., master syllabus, program brochure)."
+                            )
                         else:
-                            st.info(f"💡 **Tip:** This file is specific to the {occurrence} offering only.")
+                            st.info(
+                                f"\U0001f4a1 **Tip:** This file is specific to the {occurrence} offering only."
+                            )
 
 
 # ==================== AI FILE ANALYZER TAB ====================
@@ -1463,27 +656,28 @@ with tab3:
         # AI Provider selection
         ai_provider = st.radio(
             "Choose AI Provider",
-            ["gemini", "claude"],
+            ["gemini", "claude", "offline"],
             format_func=lambda x: {
-                "gemini": "🆓 Gemini (FREE)",
-                "claude": "💰 Claude (Paid)"
+                "gemini": "\U0001f193 Gemini (FREE)",
+                "claude": "\U0001f4b0 Claude (Paid)",
+                "offline": "\U0001f4e6 Offline (Rule-based)",
             }[x],
             horizontal=True,
-            help="Gemini offers free API access with generous limits"
+            help="Gemini offers free API access. Offline mode works without any API key.",
         )
+
+        api_key = ""
 
         if ai_provider == "gemini":
             st.success("Using Gemini 2.5 Flash via OpenRouter")
 
-            # OpenRouter API Key input
             api_key = st.text_input(
                 "OpenRouter API Key",
                 type="password",
                 placeholder="sk-or-v1-...",
-                help="Get your free API key at openrouter.ai"
+                help="Get your free API key at openrouter.ai",
             )
 
-            # Check for API key in secrets (for Streamlit Cloud)
             if not api_key:
                 try:
                     api_key = st.secrets.get("OPENROUTER_API_KEY", "")
@@ -1492,16 +686,14 @@ with tab3:
 
             st.info("Get your free API key at [openrouter.ai](https://openrouter.ai/keys)")
 
-        else:
-            # Claude API Key input
+        elif ai_provider == "claude":
             api_key = st.text_input(
                 "Claude API Key",
                 type="password",
                 placeholder="sk-ant-...",
-                help="Your Anthropic API key"
+                help="Your Anthropic API key",
             )
 
-            # Check for API key in secrets (for Streamlit Cloud)
             if not api_key:
                 try:
                     api_key = st.secrets.get("ANTHROPIC_API_KEY", "")
@@ -1510,153 +702,332 @@ with tab3:
 
             st.info("**Note:** Claude costs approximately $0.005 per file.")
 
-        # Always use full content for best analysis
+        else:
+            st.info(
+                "**Offline mode** uses rule-based pattern matching. "
+                "No API key needed, but results may be less accurate."
+            )
+
         privacy_level = "low"
 
         # How it works
         st.subheader("How it works:")
-        provider_name = "Gemini" if ai_provider == "gemini" else "Claude"
+        provider_name = {"gemini": "Gemini", "claude": "Claude", "offline": "Offline"}[ai_provider]
         st.markdown(f"""
         1. Upload files below
-        2. {provider_name} AI analyzes content
+        2. {provider_name} analyzes content
         3. Get CPE-compliant name suggestions
         """)
+
+        # Previous results section
+        saved = get_saved_results(st.session_state)
+        if saved:
+            st.divider()
+            st.subheader("Previous Results")
+            st.write(f"{len(saved)} file(s) analyzed this session")
+            if st.button("Clear History", key="clear_history"):
+                clear_saved_results(st.session_state)
+                st.rerun()
 
     with col1:
         st.subheader("Upload Files")
 
-        # File uploader
         uploaded_files = st.file_uploader(
             "Drop files here or click to browse",
-            type=['pdf', 'docx', 'doc', 'xlsx', 'xls', 'csv', 'txt', 'jpg', 'jpeg', 'png', 'gif'],
+            type=SUPPORTED_FILE_TYPES,
             accept_multiple_files=True,
-            help="Supported: PDF, Word, Excel, CSV, TXT, and images"
+            help="Supported: PDF, Word, Excel, CSV, TXT, and images",
         )
 
         if uploaded_files:
             st.write(f"**{len(uploaded_files)} file(s) selected**")
 
-            # Display file list
             for i, file in enumerate(uploaded_files):
-                with st.expander(f"📄 {file.name}", expanded=False):
+                with st.expander(f"\U0001f4c4 {file.name}", expanded=False):
                     st.write(f"Size: {file.size / 1024:.2f} KB")
                     st.write(f"Type: {file.type}")
 
             # Analyze button
-            button_label = f"🤖 Analyze Files with {provider_name} AI" + (" (FREE)" if ai_provider == "gemini" else "")
+            if ai_provider == "offline":
+                button_label = f"\U0001f4e6 Analyze Files (Offline)"
+            else:
+                button_label = f"\U0001f916 Analyze Files with {provider_name} AI"
+                if ai_provider == "gemini":
+                    button_label += " (FREE)"
+
             if st.button(button_label, type="primary", use_container_width=True):
-                if not api_key:
+                if ai_provider != "offline" and not api_key:
                     if ai_provider == "gemini":
-                        st.error("Please enter your OpenRouter API key. Get one free at [openrouter.ai/keys](https://openrouter.ai/keys)")
+                        st.error(
+                            "Please enter your OpenRouter API key. Get one free at "
+                            "[openrouter.ai/keys](https://openrouter.ai/keys)"
+                        )
                     else:
-                        st.error("Please enter your Claude API key or configure it in Streamlit secrets.")
+                        st.error(
+                            "Please enter your Claude API key or configure it in Streamlit secrets."
+                        )
                 else:
                     progress_bar = st.progress(0)
                     status_text = st.empty()
 
                     results = []
 
+                    # Initialize cache if needed
+                    if "ai_cache" not in st.session_state:
+                        st.session_state["ai_cache"] = {}
+
                     for i, file in enumerate(uploaded_files):
-                        status_text.text(f"Analyzing {file.name} with {provider_name}... ({i+1}/{len(uploaded_files)})")
+                        status_text.text(
+                            f"Analyzing {file.name} with {provider_name}... ({i + 1}/{len(uploaded_files)})"
+                        )
                         progress_bar.progress((i + 1) / len(uploaded_files))
 
+                        # Check cache
+                        file.seek(0)
+                        file_hash = compute_file_hash(file)
+                        cache_key = f"{ai_provider}:{file_hash}"
+
+                        if cache_key in st.session_state["ai_cache"]:
+                            result = st.session_state["ai_cache"][cache_key]
+                            result["file"] = file.name
+                            result["cached"] = True
+                            results.append(result)
+                            continue
+
                         # Read file content
-                        file.seek(0)  # Reset file pointer
+                        file.seek(0)
                         content, content_type = read_file_content(file)
 
                         if content_type == "unknown":
                             results.append({
                                 "file": file.name,
                                 "success": False,
-                                "error": "Unsupported file type"
+                                "error": "Unsupported file type",
                             })
                             continue
 
-                        # Analyze with selected AI provider
+                        # Analyze with selected provider
                         if ai_provider == "gemini":
-                            result = analyze_with_gemini(api_key, content, file.name, content_type, privacy_level)
+                            result = analyze_with_gemini(
+                                api_key, content, file.name, content_type, privacy_level
+                            )
+                        elif ai_provider == "claude":
+                            result = analyze_with_claude(
+                                api_key, content, file.name, content_type, privacy_level
+                            )
                         else:
-                            result = analyze_with_claude(api_key, content, file.name, content_type, privacy_level)
+                            result = analyze_with_rules(content, file.name, content_type)
+
                         result["file"] = file.name
+                        result["cached"] = False
                         results.append(result)
+
+                        # Cache successful results
+                        if result.get("success"):
+                            st.session_state["ai_cache"][cache_key] = result
 
                     status_text.text(f"Analysis complete with {provider_name}!")
 
-                    # Display results
-                    st.subheader("Results")
+                    # Track analytics
+                    track_ai_analysis(st.session_state, ai_provider, len(uploaded_files))
 
-                    for result in results:
-                        if result.get("success"):
-                            analysis = result["analysis"]
+                    # Save results for persistence
+                    save_results(st.session_state, results)
 
-                            # Get format used and extracted fields if available
-                            format_used = analysis.get('formatUsed', 'basic')
-                            extracted = analysis.get('extractedFields', {})
+                    # Store results in session for display
+                    st.session_state["last_results"] = results
 
-                            format_label = {
-                                'course': '📚 Course Format',
-                                'advanced': '📋 Advanced Format',
-                                'basic': '📄 Basic Format'
-                            }.get(format_used, '📄 Basic Format')
+            # Display results (from session state for persistence)
+            results = st.session_state.get("last_results", [])
 
-                            st.markdown(f"""
-                            <div class="file-suggestion">
-                                <h4>📄 {result['file']}</h4>
-                                <p><strong>Suggested Name:</strong> <code>{analysis['suggestedName']}</code></p>
-                                <p><strong>Format Used:</strong> {format_label}</p>
-                            </div>
-                            """, unsafe_allow_html=True)
+            if results:
+                st.subheader("Results")
 
-                            # Show extracted fields if available
-                            if extracted:
-                                with st.expander("📋 Extracted Fields", expanded=True):
-                                    cols = st.columns(3)
-                                    with cols[0]:
-                                        # Check for facultySchool (new format) or faculty (old format)
-                                        faculty_val = extracted.get('facultySchool') or extracted.get('faculty')
-                                        if faculty_val:
-                                            st.markdown(f"**Faculty-School:** {faculty_val}")
-                                        if extracted.get('courseCode'):
-                                            st.markdown(f"**Course:** {extracted['courseCode']}")
-                                        if extracted.get('term'):
-                                            st.markdown(f"**Term:** {extracted['term']}")
-                                    with cols[1]:
-                                        if extracted.get('subject'):
-                                            st.markdown(f"**Subject:** {extracted['subject']}")
-                                        if extracted.get('documentForm'):
-                                            st.markdown(f"**Doc Type:** {extracted['documentForm']}")
-                                        if extracted.get('projectCode'):
-                                            st.markdown(f"**Project:** {extracted['projectCode']}")
-                                    with cols[2]:
-                                        if extracted.get('date'):
-                                            st.markdown(f"**Date:** {extracted['date']}")
-                                        if extracted.get('revision'):
-                                            st.markdown(f"**Revision:** {extracted['revision']}")
+                # Batch export button
+                csv_data = export_results_to_csv(results)
+                st.download_button(
+                    "\U0001f4e5 Export All Results (CSV)",
+                    data=csv_data,
+                    file_name=f"cpe_naming_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                    mime="text/csv",
+                    use_container_width=True,
+                )
 
-                            # Show reasoning
-                            with st.expander("💭 AI Reasoning"):
-                                st.write(analysis.get('reasoning', 'No reasoning provided'))
-                                st.write(f"**Confidence:** {analysis.get('confidence', 'N/A')}/10")
+                st.divider()
 
-                            # Copy button
-                            st.text_input(
-                                "Copy suggested name:",
-                                value=analysis['suggestedName'],
-                                key=f"copy_{result['file']}"
-                            )
+                for result in results:
+                    if result.get("success"):
+                        analysis = result["analysis"]
+                        format_used = analysis.get("formatUsed", "basic")
+                        extracted = analysis.get("extractedFields", {})
+                        confidence = analysis.get("confidence", 5)
+                        conf_info = get_confidence_level(
+                            confidence if isinstance(confidence, int) else 5
+                        )
 
-                            st.divider()
-                        else:
-                            st.error(f"❌ **{result['file']}**: {result.get('error', 'Unknown error')}")
+                        format_label = {
+                            "course": "\U0001f4da Course Format",
+                            "advanced": "\U0001f4cb Advanced Format",
+                            "basic": "\U0001f4c4 Basic Format",
+                        }.get(format_used, "\U0001f4c4 Basic Format")
+
+                        cached_badge = " (cached)" if result.get("cached") else ""
+
+                        st.markdown(f"""
+                        <div class="file-suggestion">
+                            <h4>\U0001f4c4 {result['file']}{cached_badge}</h4>
+                            <p><strong>Suggested Name:</strong> <code>{analysis['suggestedName']}</code></p>
+                            <p><strong>Format Used:</strong> {format_label}</p>
+                            <p><strong>Confidence:</strong>
+                                <span class="confidence-{conf_info['level']}">
+                                    {conf_info['icon']} {confidence}/10 - {conf_info['message']}
+                                </span>
+                            </p>
+                        </div>
+                        """, unsafe_allow_html=True)
+
+                        # Show extracted fields if available
+                        if extracted:
+                            with st.expander("\U0001f4cb Extracted Fields", expanded=True):
+                                cols = st.columns(3)
+                                with cols[0]:
+                                    faculty_val = extracted.get("facultySchool") or extracted.get("faculty")
+                                    if faculty_val:
+                                        st.markdown(f"**Faculty-School:** {faculty_val}")
+                                    if extracted.get("courseCode"):
+                                        st.markdown(f"**Course:** {extracted['courseCode']}")
+                                    if extracted.get("term"):
+                                        st.markdown(f"**Term:** {extracted['term']}")
+                                with cols[1]:
+                                    if extracted.get("subject"):
+                                        st.markdown(f"**Subject:** {extracted['subject']}")
+                                    if extracted.get("documentForm"):
+                                        st.markdown(f"**Doc Type:** {extracted['documentForm']}")
+                                    if extracted.get("projectCode"):
+                                        st.markdown(f"**Project:** {extracted['projectCode']}")
+                                with cols[2]:
+                                    if extracted.get("date"):
+                                        st.markdown(f"**Date:** {extracted['date']}")
+                                    if extracted.get("revision"):
+                                        st.markdown(f"**Revision:** {extracted['revision']}")
+
+                        # Show reasoning
+                        with st.expander("\U0001f4ad AI Reasoning"):
+                            st.write(analysis.get("reasoning", "No reasoning provided"))
+
+                        # Copy button
+                        st.text_input(
+                            "Copy suggested name:",
+                            value=analysis["suggestedName"],
+                            key=f"copy_{result['file']}",
+                        )
+
+                        st.divider()
+                    else:
+                        st.error(
+                            f"\u274c **{result['file']}**: {result.get('error', 'Unknown error')}"
+                        )
         else:
-            st.info("👆 Upload files to get started with AI analysis")
+            st.info("\U0001f446 Upload files to get started with AI analysis")
 
 
-# Footer
+# ==================== DASHBOARD TAB ====================
+with tab4:
+    st.subheader("\U0001f4ca Session Dashboard")
+
+    analytics = get_analytics_summary(st.session_state)
+
+    # Summary metrics
+    met_col1, met_col2, met_col3, met_col4 = st.columns(4)
+
+    with met_col1:
+        st.metric("Filenames Generated", analytics["filenames_generated"])
+
+    with met_col2:
+        st.metric("Files Analyzed (AI)", analytics["files_analyzed"])
+
+    with met_col3:
+        st.metric("Locations Found", analytics["locations_generated"])
+
+    with met_col4:
+        total_actions = (
+            analytics["filenames_generated"]
+            + analytics["files_analyzed"]
+            + analytics["locations_generated"]
+        )
+        st.metric("Total Actions", total_actions)
+
+    st.divider()
+
+    dash_col1, dash_col2 = st.columns(2)
+
+    with dash_col1:
+        st.markdown("#### Format Usage")
+        formats = analytics["formats_used"]
+        if any(formats.values()):
+            for fmt, count in formats.items():
+                label = {"basic": "Basic", "advanced": "Advanced", "course": "Course"}[fmt]
+                st.write(f"**{label}:** {count} uses")
+        else:
+            st.write("No filenames generated yet.")
+
+        st.markdown("#### AI Provider Usage")
+        providers = analytics["ai_provider_used"]
+        if any(providers.values()):
+            for prov, count in providers.items():
+                label = {"gemini": "Gemini (Free)", "claude": "Claude (Paid)", "offline": "Offline"}[prov]
+                st.write(f"**{label}:** {count} files")
+        else:
+            st.write("No AI analyses yet.")
+
+    with dash_col2:
+        st.markdown("#### Most Used Document Forms")
+        doc_forms = analytics["document_forms_used"]
+        if doc_forms:
+            sorted_forms = sorted(doc_forms.items(), key=lambda x: -x[1])
+            for form, count in sorted_forms[:10]:
+                form_name = DOCUMENT_FORMS.get(form, form)
+                st.write(f"**{form_name}:** {count}")
+        else:
+            st.write("No document forms tracked yet.")
+
+        st.markdown("#### Partner Usage")
+        partners = analytics["partners_used"]
+        if partners:
+            sorted_partners = sorted(partners.items(), key=lambda x: -x[1])
+            for p, count in sorted_partners[:10]:
+                st.write(f"**{p}:** {count}")
+        else:
+            st.write("No partner data yet.")
+
+    st.divider()
+    st.caption(f"Session started: {analytics.get('session_start', 'N/A')}")
+
+    # Manage custom templates
+    st.divider()
+    st.subheader("Manage Custom Templates")
+
+    custom_templates = st.session_state.get("custom_templates", {})
+    if custom_templates:
+        for name in list(custom_templates.keys()):
+            col_t1, col_t2 = st.columns([4, 1])
+            with col_t1:
+                st.write(f"\U0001f4c4 **{name}** - {custom_templates[name].get('format_type', 'basic')} format")
+            with col_t2:
+                if st.button("Delete", key=f"del_tmpl_{name}"):
+                    delete_custom_template(st.session_state, name)
+                    st.rerun()
+    else:
+        st.write("No custom templates saved. Use 'Save as Template' in the Manual Generator tab.")
+
+
+# ─── Footer ────────────────────────────────────────────────────────────────
+
 st.divider()
 st.markdown("""
 <div style="text-align: center; color: #666; font-size: 12px;">
-    <p>UBC CPE File Naming Tool | Powered by Gemini AI (Free) & Claude AI</p>
+    <p>UBC CPE File Naming Tool V3 | Powered by Gemini AI (Free), Claude AI & Offline Mode</p>
     <p>For use by UBC Continuing Professional Education staff</p>
+    <p style="font-size: 10px;">Keyboard shortcuts: Tab to navigate fields | Enter to submit forms</p>
 </div>
 """, unsafe_allow_html=True)
