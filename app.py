@@ -13,12 +13,20 @@ Modules:
 - file_location.py: File location path generation
 - ai_analysis.py: AI analysis (Claude, Gemini, rule-based fallback)
 - ui_components.py: Templates, analytics, export, styling
+- pii_scrubber.py: PII detection and redaction before AI analysis
 """
 
 import streamlit as st
 import re
 from datetime import datetime
 
+from pii_scrubber import (
+    scrub_text,
+    get_pii_summary,
+    is_available as pii_available,
+    PII_ENTITY_LABELS,
+    DEFAULT_PII_ENTITIES,
+)
 from constants import (
     DOCUMENT_FORMS,
     REVISION_STATUSES,
@@ -710,6 +718,26 @@ with tab3:
 
         privacy_level = "low"
 
+        # PII Scrubbing settings
+        st.divider()
+        st.subheader("Privacy Protection")
+
+        pii_enabled = st.toggle(
+            "Strip PII before AI analysis",
+            value=True,
+            help="Remove personal information (names, emails, SINs, etc.) from document text before sending to AI.",
+        )
+
+        if pii_enabled:
+            if pii_available():
+                st.success("Microsoft Presidio active - full PII detection enabled")
+            else:
+                st.warning("Presidio not installed - using basic regex fallback. Install `presidio-analyzer presidio-anonymizer` for better detection.")
+
+            with st.expander("PII types detected"):
+                for entity_id, label in PII_ENTITY_LABELS.items():
+                    st.write(f"- {label}")
+
         # How it works
         st.subheader("How it works:")
         provider_name = {"gemini": "Gemini", "claude": "Claude", "offline": "Offline"}[ai_provider]
@@ -806,6 +834,11 @@ with tab3:
                             })
                             continue
 
+                        # Strip PII from text content before sending to AI
+                        pii_detected = []
+                        if pii_enabled and content_type == "text":
+                            content, pii_detected = scrub_text(content)
+
                         # Analyze with selected provider
                         if ai_provider == "gemini":
                             result = analyze_with_gemini(
@@ -820,6 +853,7 @@ with tab3:
 
                         result["file"] = file.name
                         result["cached"] = False
+                        result["pii_detected"] = pii_detected
                         results.append(result)
 
                         # Cache successful results
@@ -914,6 +948,16 @@ with tab3:
                         # Show reasoning
                         with st.expander("\U0001f4ad AI Reasoning"):
                             st.write(analysis.get("reasoning", "No reasoning provided"))
+
+                        # PII detection summary
+                        pii_items = result.get("pii_detected", [])
+                        if pii_items:
+                            pii_summary = get_pii_summary(pii_items)
+                            with st.expander(f"\U0001f6e1\ufe0f PII Stripped ({len(pii_items)} items removed)"):
+                                for pii_type, count in pii_summary.items():
+                                    label = PII_ENTITY_LABELS.get(pii_type, pii_type)
+                                    st.write(f"- **{label}:** {count} instance(s) redacted")
+                                st.info("Personal information was stripped from this file before AI analysis.")
 
                         # Copy button
                         st.text_input(
