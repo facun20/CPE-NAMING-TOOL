@@ -11,17 +11,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Download spaCy model for PII detection
-RUN python -m spacy download en_core_web_lg
+# Download spaCy model for PII detection (sm = 12MB, sufficient for Presidio)
+RUN python -m spacy download en_core_web_sm
 
 # Copy application code
 COPY . .
 
-# Railway sets PORT env var automatically
+# Railway injects PORT env var
 EXPOSE 8501
 
 CMD streamlit run app.py \
     --server.port=${PORT:-8501} \
     --server.address=0.0.0.0 \
     --server.headless=true \
+    --server.fileWatcherType=none \
     --browser.gatherUsageStats=false

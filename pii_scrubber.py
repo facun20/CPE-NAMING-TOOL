@@ -297,7 +297,7 @@ def is_available() -> bool:
         return False
     try:
         import spacy
-        spacy.load("en_core_web_lg")
+        spacy.load("en_core_web_sm")
         return True
     except Exception:
         return False
