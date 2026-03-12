@@ -18,6 +18,7 @@ Modules:
 
 import streamlit as st
 import re
+import os
 from datetime import datetime
 
 from pii_scrubber import (
@@ -85,14 +86,27 @@ st.markdown(ACCESSIBILITY_HTML, unsafe_allow_html=True)
 
 # ─── Authentication ────────────────────────────────────────────────────────
 
+def _get_auth_config() -> dict:
+    """Get authentication configuration from environment variables.
+
+    Set APP_PASSWORD env var in Railway to enable team password protection.
+    """
+    config = {"enabled": False, "mode": None, "team_password": None, "users": {}}
+
+    team_password = os.environ.get("APP_PASSWORD", "")
+    if team_password:
+        config["enabled"] = True
+        config["mode"] = "team"
+        config["team_password"] = team_password
+
+    return config
+
+
 def check_auth() -> bool:
     """Check if authentication is enabled and if user is authenticated."""
-    try:
-        auth_enabled = st.secrets.get("AUTH_ENABLED", False)
-    except Exception:
-        return True  # No secrets configured, skip auth
+    auth_config = _get_auth_config()
 
-    if not auth_enabled:
+    if not auth_config["enabled"]:
         return True
 
     if st.session_state.get("authenticated"):
@@ -106,21 +120,32 @@ def check_auth() -> bool:
     """, unsafe_allow_html=True)
 
     with st.form("login_form"):
-        username = st.text_input("Username", autocomplete="username")
-        password = st.text_input("Password", type="password", autocomplete="current-password")
-        submitted = st.form_submit_button("Sign In", type="primary", use_container_width=True)
+        if auth_config["mode"] == "team":
+            # Simple team password mode
+            password = st.text_input("Enter team password:", type="password", autocomplete="current-password")
+            submitted = st.form_submit_button("Sign In", type="primary", use_container_width=True)
 
-        if submitted:
-            try:
-                valid_users = st.secrets.get("USERS", {})
+            if submitted:
+                if password == auth_config["team_password"]:
+                    st.session_state["authenticated"] = True
+                    st.session_state["username"] = "team"
+                    st.rerun()
+                else:
+                    st.error("Incorrect password.")
+        else:
+            # Individual user mode
+            username = st.text_input("Username", autocomplete="username")
+            password = st.text_input("Password", type="password", autocomplete="current-password")
+            submitted = st.form_submit_button("Sign In", type="primary", use_container_width=True)
+
+            if submitted:
+                valid_users = auth_config["users"]
                 if username in valid_users and valid_users[username] == password:
                     st.session_state["authenticated"] = True
                     st.session_state["username"] = username
                     st.rerun()
                 else:
                     st.error("Invalid username or password.")
-            except Exception:
-                st.error("Authentication configuration error.")
 
     return False
 
@@ -621,10 +646,7 @@ with tab3:
             )
 
             if not api_key:
-                try:
-                    api_key = st.secrets.get("OPENROUTER_API_KEY", "")
-                except Exception:
-                    pass
+                api_key = os.environ.get("OPENROUTER_API_KEY", "")
 
             st.caption("Get a free key at [openrouter.ai/keys](https://openrouter.ai/keys) — Key saves automatically.")
 
@@ -636,10 +658,7 @@ with tab3:
             )
 
             if not api_key:
-                try:
-                    api_key = st.secrets.get("ANTHROPIC_API_KEY", "")
-                except Exception:
-                    pass
+                api_key = os.environ.get("ANTHROPIC_API_KEY", "")
 
             st.caption("Claude costs ~$0.005 per file.")
 
