@@ -12,9 +12,31 @@ import { initLocation } from './location.js';
 window.APP_CONFIG = null;
 
 document.addEventListener('DOMContentLoaded', async () => {
-    // Check auth
+    // Check if auth is required via the public health endpoint
+    let authRequired = true;
+    try {
+        const health = await fetch('/api/health').then((r) => r.json());
+        authRequired = health.auth_required;
+    } catch {
+        // Assume auth required if health check fails
+    }
+
     const token = API.getToken();
-    if (token) {
+
+    if (!authRequired) {
+        // No password set - get a token and go straight to app
+        if (!token) {
+            try {
+                const res = await API.post('/api/auth/login', { password: '' });
+                const data = await res.json();
+                API.setToken(data.token);
+            } catch {
+                // Continue anyway
+            }
+        }
+        showApp();
+    } else if (token) {
+        // Has token - verify it still works
         try {
             await API.get('/api/config');
             showApp();
@@ -22,21 +44,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             showLogin();
         }
     } else {
-        // Try without auth (password might not be set)
-        try {
-            const config = await API.get('/api/config');
-            if (!config.auth_required) {
-                // No auth needed, get a token anyway
-                const res = await API.post('/api/auth/login', { password: '' });
-                const data = await res.json();
-                API.setToken(data.token);
-                showApp();
-            } else {
-                showLogin();
-            }
-        } catch {
-            showLogin();
-        }
+        showLogin();
     }
 
     // Login form handler

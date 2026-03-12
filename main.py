@@ -103,7 +103,7 @@ _ai_cache: dict[str, dict] = {}
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok"}
+    return {"status": "ok", "auth_required": bool(APP_PASSWORD)}
 
 
 @app.post("/api/auth/login")

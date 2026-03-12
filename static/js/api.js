@@ -25,13 +25,16 @@ const API = {
         return headers;
     },
 
-    async get(path) {
-        const res = await fetch(path, { headers: this._headers() });
+    _handle401(res) {
         if (res.status === 401) {
             this.clearToken();
-            window.location.reload();
             throw new Error('Unauthorized');
         }
+    },
+
+    async get(path) {
+        const res = await fetch(path, { headers: this._headers() });
+        this._handle401(res);
         return res.json();
     },
 
@@ -41,11 +44,7 @@ const API = {
             headers: this._headers(),
             body: JSON.stringify(body),
         });
-        if (res.status === 401) {
-            this.clearToken();
-            window.location.reload();
-            throw new Error('Unauthorized');
-        }
+        this._handle401(res);
         return res;
     },
 
@@ -60,11 +59,7 @@ const API = {
             headers,
             body: formData,
         });
-        if (res.status === 401) {
-            this.clearToken();
-            window.location.reload();
-            throw new Error('Unauthorized');
-        }
+        this._handle401(res);
         return res;
     },
 
@@ -74,11 +69,7 @@ const API = {
             headers: this._headers(),
             body: JSON.stringify(body),
         });
-        if (res.status === 401) {
-            this.clearToken();
-            window.location.reload();
-            throw new Error('Unauthorized');
-        }
+        this._handle401(res);
         return res;
     },
 };
