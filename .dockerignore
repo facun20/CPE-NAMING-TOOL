@@ -1,0 +1,12 @@
+.git
+.gitignore
+.devcontainer
+tests/
+__pycache__/
+*.pyc
+*.pyo
+.env
+secrets.toml
+.streamlit/secrets.toml
+DOCUMENTATION.md
+README.md
