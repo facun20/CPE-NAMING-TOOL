@@ -87,39 +87,17 @@ st.markdown(ACCESSIBILITY_HTML, unsafe_allow_html=True)
 # ─── Authentication ────────────────────────────────────────────────────────
 
 def _get_auth_config() -> dict:
-    """Get authentication configuration from secrets or environment variables.
+    """Get authentication configuration from environment variables.
 
-    Supports two modes:
-    1. Simple team password: Set APP_PASSWORD env var in Railway
-    2. Individual users: Set USERS section in Streamlit secrets
+    Set APP_PASSWORD env var in Railway to enable team password protection.
     """
     config = {"enabled": False, "mode": None, "team_password": None, "users": {}}
 
-    # Check for simple team password via env var (easiest for Railway)
     team_password = os.environ.get("APP_PASSWORD", "")
-
-    # Also check Streamlit secrets as fallback
-    if not team_password:
-        try:
-            team_password = st.secrets.get("APP_PASSWORD", "")
-        except Exception:
-            pass
-
     if team_password:
         config["enabled"] = True
         config["mode"] = "team"
         config["team_password"] = team_password
-        return config
-
-    # Check Streamlit secrets for individual user auth
-    try:
-        auth_enabled = st.secrets.get("AUTH_ENABLED", False)
-        if auth_enabled:
-            config["enabled"] = True
-            config["mode"] = "users"
-            config["users"] = dict(st.secrets.get("USERS", {}))
-    except Exception:
-        pass
 
     return config
 
@@ -668,10 +646,7 @@ with tab3:
             )
 
             if not api_key:
-                try:
-                    api_key = st.secrets.get("OPENROUTER_API_KEY", "")
-                except Exception:
-                    pass
+                api_key = os.environ.get("OPENROUTER_API_KEY", "")
 
             st.caption("Get a free key at [openrouter.ai/keys](https://openrouter.ai/keys) — Key saves automatically.")
 
@@ -683,10 +658,7 @@ with tab3:
             )
 
             if not api_key:
-                try:
-                    api_key = st.secrets.get("ANTHROPIC_API_KEY", "")
-                except Exception:
-                    pass
+                api_key = os.environ.get("ANTHROPIC_API_KEY", "")
 
             st.caption("Claude costs ~$0.005 per file.")
 
