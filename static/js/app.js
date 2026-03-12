@@ -11,43 +11,8 @@ import { initLocation } from './location.js';
 // Global config store
 window.APP_CONFIG = null;
 
-document.addEventListener('DOMContentLoaded', async () => {
-    // Check if auth is required via the public health endpoint
-    let authRequired = true;
-    try {
-        const health = await fetch('/api/health').then((r) => r.json());
-        authRequired = health.auth_required;
-    } catch {
-        // Assume auth required if health check fails
-    }
-
-    const token = API.getToken();
-
-    if (!authRequired) {
-        // No password set - get a token and go straight to app
-        if (!token) {
-            try {
-                const res = await API.post('/api/auth/login', { password: '' });
-                const data = await res.json();
-                API.setToken(data.token);
-            } catch {
-                // Continue anyway
-            }
-        }
-        showApp();
-    } else if (token) {
-        // Has token - verify it still works
-        try {
-            await API.get('/api/config');
-            showApp();
-        } catch {
-            showLogin();
-        }
-    } else {
-        showLogin();
-    }
-
-    // Login form handler
+document.addEventListener('DOMContentLoaded', () => {
+    // Setup login form handler immediately (no async, no network calls)
     const loginForm = document.getElementById('login-form');
     if (loginForm) {
         loginForm.addEventListener('submit', async (e) => {
@@ -56,8 +21,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             const errorEl = document.getElementById('login-error');
 
             try {
-                const res = await API.post('/api/auth/login', {
-                    password: passwordInput.value,
+                const res = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password: passwordInput.value }),
                 });
                 if (res.ok) {
                     const data = await res.json();
@@ -90,16 +57,64 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (logoutBtn) {
         logoutBtn.addEventListener('click', () => {
             API.clearToken();
-            window.location.reload();
+            showLogin();
         });
     }
 
-    // Handle hash-based routing
-    const hash = window.location.hash.slice(1);
-    if (['generator', 'analyzer', 'location'].includes(hash)) {
-        switchTab(hash);
-    }
+    // Startup auth check
+    checkAuth();
 });
+
+async function checkAuth() {
+    // Check if auth is required via the public health endpoint
+    let authRequired = true;
+    try {
+        const res = await fetch('/api/health');
+        const health = await res.json();
+        authRequired = health.auth_required;
+    } catch {
+        // Assume auth required if health check fails
+    }
+
+    const token = API.getToken();
+
+    if (!authRequired) {
+        // No password set - get a token and go straight to app
+        if (!token) {
+            try {
+                const res = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password: '' }),
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    API.setToken(data.token);
+                }
+            } catch {
+                // Continue anyway
+            }
+        }
+        showApp();
+    } else if (token) {
+        // Has token - verify it still works
+        try {
+            const res = await fetch('/api/config', {
+                headers: { 'Authorization': `Bearer ${token}` },
+            });
+            if (res.ok) {
+                showApp();
+            } else {
+                API.clearToken();
+                showLogin();
+            }
+        } catch {
+            showLogin();
+        }
+    } else {
+        showLogin();
+    }
+}
 
 function switchTab(tabId) {
     document.querySelectorAll('.tab-btn').forEach((b) => b.classList.remove('active'));
@@ -113,13 +128,24 @@ function switchTab(tabId) {
     window.location.hash = tabId;
 }
 
+let appInitialized = false;
+
 async function showApp() {
     document.getElementById('login-overlay').classList.add('hidden');
     document.getElementById('app-shell').classList.remove('hidden');
 
-    // Load config
+    if (appInitialized) return;
+    appInitialized = true;
+
+    // Load config using raw fetch to avoid any 401 handling side effects
     try {
-        window.APP_CONFIG = await API.get('/api/config');
+        const token = API.getToken();
+        const res = await fetch('/api/config', {
+            headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+        });
+        if (res.ok) {
+            window.APP_CONFIG = await res.json();
+        }
     } catch {
         console.error('Failed to load config');
     }
