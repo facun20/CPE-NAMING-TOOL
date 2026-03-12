@@ -251,35 +251,18 @@ CUSTOM_CSS = """
         outline-offset: 2px;
     }
 
-    /* Accessibility: skip link */
-    .skip-link {
-        position: absolute;
-        top: -40px;
-        left: 0;
-        background: #002145;
-        color: white;
-        padding: 8px;
-        z-index: 100;
-        transition: top 0.3s;
+    /* Reduce Streamlit default padding */
+    .block-container {
+        padding-bottom: 1rem !important;
     }
 
-    .skip-link:focus {
-        top: 0;
-    }
-
-    /* Keyboard shortcut hints */
-    .shortcut-hint {
-        font-size: 11px;
-        color: #888;
-        font-style: italic;
+    footer {
+        visibility: hidden;
     }
 </style>
 """
 
-ACCESSIBILITY_HTML = """
-<a href="#main-content" class="skip-link" tabindex="0">Skip to main content</a>
-<div id="main-content" tabindex="-1"></div>
-"""
+ACCESSIBILITY_HTML = ""
 
 
 # ─── Template Management ──────────────────────────────────────────────────
