@@ -139,10 +139,10 @@ st.markdown("""
 
 # ─── Main Tabs ─────────────────────────────────────────────────────────────
 
-tab1, tab2, tab3, tab4 = st.tabs([
-    "\U0001f4dd Manual Generator",
-    "\U0001f4c1 File Location",
+tab1, tab3, tab2, tab4 = st.tabs([
+    "\u270f\ufe0f Manual Generator",
     "\U0001f916 AI File Analyzer",
+    "\U0001f4c1 File Location",
     "\U0001f4ca Dashboard",
 ])
 
@@ -595,34 +595,29 @@ with tab2:
 
 # ==================== AI FILE ANALYZER TAB ====================
 with tab3:
-    col1, col2 = st.columns([2, 1])
+    col1, col2 = st.columns([3, 1])
 
     with col2:
-        st.subheader("AI Settings")
+        st.markdown("### AI Settings")
 
         # AI Provider selection
-        ai_provider = st.radio(
-            "Choose AI Provider",
+        ai_provider = st.selectbox(
+            "AI Provider:",
             ["gemini", "claude", "offline"],
             format_func=lambda x: {
-                "gemini": "\U0001f193 Gemini (FREE)",
-                "claude": "\U0001f4b0 Claude (Paid)",
-                "offline": "\U0001f4e6 Offline (Rule-based)",
+                "gemini": "Gemini 2.5 Flash (via OpenRouter)",
+                "claude": "Claude (Paid)",
+                "offline": "Offline (Rule-based)",
             }[x],
-            horizontal=True,
-            help="Gemini offers free API access. Offline mode works without any API key.",
         )
 
         api_key = ""
 
         if ai_provider == "gemini":
-            st.success("Using Gemini 2.5 Flash via OpenRouter")
-
             api_key = st.text_input(
-                "OpenRouter API Key",
+                "OpenRouter API Key:",
                 type="password",
                 placeholder="sk-or-v1-...",
-                help="Get your free API key at openrouter.ai",
             )
 
             if not api_key:
@@ -631,14 +626,13 @@ with tab3:
                 except Exception:
                     pass
 
-            st.info("Get your free API key at [openrouter.ai](https://openrouter.ai/keys)")
+            st.caption("Get a free key at [openrouter.ai/keys](https://openrouter.ai/keys) — Key saves automatically.")
 
         elif ai_provider == "claude":
             api_key = st.text_input(
-                "Claude API Key",
+                "Claude API Key:",
                 type="password",
                 placeholder="sk-ant-...",
-                help="Your Anthropic API key",
             )
 
             if not api_key:
@@ -647,72 +641,125 @@ with tab3:
                 except Exception:
                     pass
 
-            st.info("**Note:** Claude costs approximately $0.005 per file.")
+            st.caption("Claude costs ~$0.005 per file.")
 
         else:
-            st.info(
-                "**Offline mode** uses rule-based pattern matching. "
-                "No API key needed, but results may be less accurate."
-            )
+            st.caption("Rule-based pattern matching. No API key needed.")
 
         privacy_level = "low"
 
-        # PII Scrubbing settings
-        st.divider()
-        st.subheader("Privacy Protection")
-
-        pii_enabled = st.toggle(
-            "Strip PII before AI analysis",
-            value=True,
-            help="Remove personal information (names, emails, SINs, etc.) from document text before sending to AI.",
-        )
-
-        if pii_enabled:
-            if pii_available():
-                st.success("Microsoft Presidio active - full PII detection enabled")
-            else:
-                st.warning("Presidio not installed - using basic regex fallback. Install `presidio-analyzer presidio-anonymizer` for better detection.")
-
-            with st.expander("PII types detected"):
-                for entity_id, label in PII_ENTITY_LABELS.items():
-                    st.write(f"- {label}")
+        # PII Protection badge - always on
+        pii_enabled = True
+        st.markdown("""
+        <div class="pii-badge">
+            <h4>\U0001f6e1\ufe0f PII Protection — Always On</h4>
+            <p>All personal information (emails, phone numbers, SIN, addresses, etc.) is automatically
+            detected and stripped before any content is sent to AI. Files are scanned when loaded.</p>
+        </div>
+        """, unsafe_allow_html=True)
 
         # How it works
-        st.subheader("How it works:")
+        st.markdown("**How it works:**")
         provider_name = {"gemini": "Gemini", "claude": "Claude", "offline": "Offline"}[ai_provider]
         st.markdown(f"""
-        1. Upload files below
-        2. {provider_name} analyzes content
-        3. Get CPE-compliant name suggestions
-        """)
+        <div class="how-it-works">
+        <ol>
+            <li>Drop files or browse to select</li>
+            <li>Choose AI provider and privacy level</li>
+            <li>AI analyzes content</li>
+            <li>Suggests CPE-compliant names</li>
+            <li>Review and rename files</li>
+        </ol>
+        </div>
+        """, unsafe_allow_html=True)
 
-        # Previous results section
-        saved = get_saved_results(st.session_state)
-        if saved:
-            st.divider()
-            st.subheader("Previous Results")
-            st.write(f"{len(saved)} file(s) analyzed this session")
-            if st.button("Clear History", key="clear_history"):
-                clear_saved_results(st.session_state)
-                st.rerun()
+        # Provider-specific info
+        if ai_provider == "gemini":
+            st.markdown("""
+            <div class="provider-info">
+                <strong>Gemini via OpenRouter.</strong> Enter your OpenRouter API key above.
+                Many models have free tiers. Your key is saved locally and never shared.
+            </div>
+            """, unsafe_allow_html=True)
+        elif ai_provider == "claude":
+            st.markdown("""
+            <div class="provider-info">
+                <strong>Claude by Anthropic.</strong> Paid API with high accuracy.
+                Enter your API key above.
+            </div>
+            """, unsafe_allow_html=True)
 
     with col1:
-        st.subheader("Upload Files")
-
         uploaded_files = st.file_uploader(
             "Drop files here or click to browse",
             type=SUPPORTED_FILE_TYPES,
             accept_multiple_files=True,
             help="Supported: PDF, Word, Excel, CSV, TXT, and images",
+            label_visibility="collapsed",
         )
 
+        # Instant PII scanning on upload
         if uploaded_files:
-            st.write(f"**{len(uploaded_files)} file(s) selected**")
+            # Scan files for PII immediately on upload
+            if "pii_scan_results" not in st.session_state:
+                st.session_state["pii_scan_results"] = {}
 
-            for i, file in enumerate(uploaded_files):
-                with st.expander(f"\U0001f4c4 {file.name}", expanded=False):
-                    st.write(f"Size: {file.size / 1024:.2f} KB")
-                    st.write(f"Type: {file.type}")
+            total_pii_count = 0
+            total_pii_files = 0
+            all_pii_types = {}
+
+            for file in uploaded_files:
+                file_key = f"{file.name}_{file.size}"
+                if file_key not in st.session_state["pii_scan_results"]:
+                    # Read and scan this file for PII
+                    file.seek(0)
+                    content, content_type = read_file_content(file)
+                    if content_type == "text" and content.strip():
+                        _, pii_items = scrub_text(content)
+                        st.session_state["pii_scan_results"][file_key] = pii_items
+                    else:
+                        st.session_state["pii_scan_results"][file_key] = []
+
+                pii_items = st.session_state["pii_scan_results"][file_key]
+                if pii_items:
+                    total_pii_count += len(pii_items)
+                    total_pii_files += 1
+                    for item in pii_items:
+                        pii_type = item.get("type", "UNKNOWN")
+                        label = PII_ENTITY_LABELS.get(pii_type, pii_type)
+                        all_pii_types[label] = all_pii_types.get(label, 0) + 1
+
+            # File list with status
+            st.markdown(f"**{len(uploaded_files)} file(s) selected**")
+
+            for file in uploaded_files:
+                file_key = f"{file.name}_{file.size}"
+                file_pii = st.session_state["pii_scan_results"].get(file_key, [])
+                pii_icon = "\u26a0\ufe0f " if file_pii else ""
+                status = f"{len(file_pii)} PII items" if file_pii else "Ready for analysis"
+
+                with st.expander(f"\u2611\ufe0f {pii_icon}{file.name} — {status}", expanded=False):
+                    st.write(f"**Size:** {file.size / 1024:.2f} KB")
+                    st.write(f"**Type:** {file.type}")
+                    if file_pii:
+                        file_pii_summary = get_pii_summary(file_pii)
+                        for pii_type, count in file_pii_summary.items():
+                            label = PII_ENTITY_LABELS.get(pii_type, pii_type)
+                            st.write(f"- **{label}:** {count} found")
+
+            # PII warning banner (like desktop version)
+            if total_pii_count > 0:
+                pii_tags_html = " ".join(
+                    f'<span class="pii-tag">{label}: {count}</span>'
+                    for label, count in all_pii_types.items()
+                )
+                st.markdown(f"""
+                <div class="pii-warning">
+                    <h4>\u26a0\ufe0f {total_pii_count} PII items detected in {total_pii_files} file(s)</h4>
+                    <div class="pii-tags">{pii_tags_html}</div>
+                    <p class="pii-note">All PII will be automatically stripped before sending to AI for analysis.</p>
+                </div>
+                """, unsafe_allow_html=True)
 
             # Analyze button
             if ai_provider == "offline":
@@ -722,7 +769,18 @@ with tab3:
                 if ai_provider == "gemini":
                     button_label += " (FREE)"
 
-            if st.button(button_label, type="primary", use_container_width=True):
+            btn_col1, btn_col2 = st.columns([2, 1])
+
+            with btn_col1:
+                analyze_clicked = st.button(button_label, type="primary", use_container_width=True)
+
+            with btn_col2:
+                if st.button("\U0001f5d1\ufe0f Clear All", use_container_width=True, key="clear_ai"):
+                    st.session_state.pop("last_results", None)
+                    st.session_state.pop("pii_scan_results", None)
+                    st.rerun()
+
+            if analyze_clicked:
                 if ai_provider != "offline" and not api_key:
                     if ai_provider == "gemini":
                         st.error(
@@ -814,6 +872,7 @@ with tab3:
             results = st.session_state.get("last_results", [])
 
             if results:
+                st.divider()
                 st.subheader("Results")
 
                 # Batch export button
@@ -825,8 +884,6 @@ with tab3:
                     mime="text/csv",
                     use_container_width=True,
                 )
-
-                st.divider()
 
                 for result in results:
                     if result.get("success"):
@@ -911,7 +968,13 @@ with tab3:
                             f"\u274c **{result['file']}**: {result.get('error', 'Unknown error')}"
                         )
         else:
-            st.info("\U0001f446 Upload files to get started with AI analysis")
+            st.markdown("""
+            <div style="text-align: center; padding: 60px 20px; border: 2px dashed #ccc; border-radius: 12px; margin: 10px 0;">
+                <p style="font-size: 40px; margin-bottom: 10px;">\u2b06\ufe0f</p>
+                <h3 style="color: #333; margin-bottom: 8px;">Drop Files Here</h3>
+                <p style="color: #888;">Drag and drop files or folders to analyze with AI</p>
+            </div>
+            """, unsafe_allow_html=True)
 
 
 # ==================== DASHBOARD TAB ====================

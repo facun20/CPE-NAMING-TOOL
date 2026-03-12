@@ -18,8 +18,10 @@ CUSTOM_CSS = """
     :root {
         --ubc-blue: #002145;
         --ubc-gold: #C1A01E;
+        --ubc-light-bg: #f8f9fa;
     }
 
+    /* Main header */
     .main-header {
         text-align: center;
         padding: 20px;
@@ -41,21 +43,30 @@ CUSTOM_CSS = """
         font-weight: 600;
     }
 
+    /* Tab styling */
     .stTabs [data-baseweb="tab-list"] {
-        gap: 8px;
+        gap: 0px;
+        background-color: #e8e8e8;
+        border-radius: 8px;
+        padding: 4px;
     }
 
     .stTabs [data-baseweb="tab"] {
-        background-color: #f0f0f0;
-        border-radius: 8px 8px 0 0;
-        padding: 10px 20px;
+        background-color: transparent;
+        border-radius: 6px;
+        padding: 10px 24px;
+        font-weight: 500;
+        color: #333;
     }
 
     .stTabs [aria-selected="true"] {
         background-color: #002145 !important;
         color: white !important;
+        font-weight: 600;
+        border-radius: 6px;
     }
 
+    /* Output box */
     .output-box {
         background-color: #f8f8f8;
         border-left: 4px solid #C1A01E;
@@ -64,14 +75,17 @@ CUSTOM_CSS = """
         margin: 10px 0;
     }
 
+    /* File suggestion card */
     .file-suggestion {
-        background-color: #e8f4f8;
-        border: 1px solid #002145;
-        border-radius: 8px;
-        padding: 15px;
+        background-color: #f8fbff;
+        border: 1px solid #d0dae8;
+        border-left: 4px solid #002145;
+        border-radius: 0 8px 8px 0;
+        padding: 15px 20px;
         margin: 10px 0;
     }
 
+    /* Help panel */
     .help-panel {
         background-color: #f8f8f8;
         border-left: 4px solid #C1A01E;
@@ -79,6 +93,7 @@ CUSTOM_CSS = """
         border-radius: 0 8px 8px 0;
     }
 
+    /* Location result */
     .location-result {
         background-color: #e8f4e8;
         border: 2px solid #002145;
@@ -106,6 +121,100 @@ CUSTOM_CSS = """
         margin: 0 8px;
     }
 
+    /* PII warning banner */
+    .pii-warning {
+        background-color: #fff8e1;
+        border: 1px solid #ffe082;
+        border-left: 4px solid #ff9800;
+        border-radius: 0 8px 8px 0;
+        padding: 12px 16px;
+        margin: 10px 0;
+    }
+
+    .pii-warning h4 {
+        color: #e65100;
+        margin: 0 0 6px 0;
+        font-size: 14px;
+    }
+
+    .pii-warning .pii-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 8px 0;
+    }
+
+    .pii-tag {
+        background-color: #fff3e0;
+        border: 1px solid #ffcc80;
+        color: #e65100;
+        padding: 2px 10px;
+        border-radius: 12px;
+        font-size: 12px;
+        font-weight: 600;
+    }
+
+    .pii-warning .pii-note {
+        color: #666;
+        font-size: 12px;
+        margin: 6px 0 0 0;
+    }
+
+    /* PII protection badge */
+    .pii-badge {
+        background-color: #e8f5e9;
+        border: 1px solid #a5d6a7;
+        border-radius: 8px;
+        padding: 12px 16px;
+        margin: 10px 0;
+    }
+
+    .pii-badge h4 {
+        color: #2e7d32;
+        margin: 0 0 4px 0;
+        font-size: 14px;
+    }
+
+    .pii-badge p {
+        color: #555;
+        font-size: 12px;
+        margin: 0;
+        line-height: 1.4;
+    }
+
+    /* Provider info box */
+    .provider-info {
+        background-color: #e8f5e9;
+        border: 1px solid #c8e6c9;
+        border-radius: 8px;
+        padding: 10px 14px;
+        margin: 10px 0;
+        font-size: 13px;
+    }
+
+    /* File list item */
+    .file-item {
+        background-color: #f8f9fa;
+        border: 1px solid #e0e0e0;
+        border-radius: 6px;
+        padding: 10px 14px;
+        margin: 6px 0;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+
+    .file-item-name {
+        font-weight: 500;
+        color: #333;
+    }
+
+    .file-item-status {
+        font-size: 12px;
+        color: #888;
+    }
+
+    /* Confidence levels */
     .confidence-high {
         color: #28a745;
         font-weight: 600;
@@ -119,6 +228,21 @@ CUSTOM_CSS = """
     .confidence-low {
         color: #dc3545;
         font-weight: 600;
+    }
+
+    /* How it works list */
+    .how-it-works {
+        font-size: 13px;
+        color: #555;
+    }
+
+    .how-it-works ol {
+        padding-left: 20px;
+        margin: 8px 0;
+    }
+
+    .how-it-works li {
+        margin: 4px 0;
     }
 
     /* Accessibility: focus indicators */
