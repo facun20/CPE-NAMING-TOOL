@@ -1070,13 +1070,3 @@ with tab4:
 
 
 
-# ─── Footer ────────────────────────────────────────────────────────────────
-
-st.divider()
-st.markdown("""
-<div style="text-align: center; color: #666; font-size: 12px;">
-    <p>UBC CPE File Naming Tool V3 | Powered by Gemini AI (Free), Claude AI & Offline Mode</p>
-    <p>For use by UBC Continuing Professional Education staff</p>
-    <p style="font-size: 10px;">Keyboard shortcuts: Tab to navigate fields | Enter to submit forms</p>
-</div>
-""", unsafe_allow_html=True)
