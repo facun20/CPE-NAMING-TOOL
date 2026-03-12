@@ -56,9 +56,6 @@ from ai_analysis import (
 from ui_components import (
     CUSTOM_CSS,
     ACCESSIBILITY_HTML,
-    get_all_templates,
-    save_custom_template,
-    delete_custom_template,
     init_analytics,
     track_filename_generated,
     track_ai_analysis,
@@ -169,41 +166,17 @@ with tab1:
                 f"**{HELP_CONTENT[help_topic]['title']}**\n\n{HELP_CONTENT[help_topic]['content']}"
             )
 
-        # Template section
-        st.divider()
-        st.subheader("Templates")
-        templates = get_all_templates(st.session_state)
-        template_choice = st.selectbox(
-            "Load a template:",
-            [""] + list(templates.keys()),
-            format_func=lambda x: x if x else "Select a template...",
-            key="template_selector",
-        )
-
-        if template_choice and template_choice in templates:
-            if st.button("Apply Template", use_container_width=True):
-                tmpl = templates[template_choice]
-                st.session_state["tmpl_format"] = tmpl.get("format_type", "basic")
-                st.session_state["tmpl_faculty"] = tmpl.get("faculty_school", "")
-                st.session_state["tmpl_project"] = tmpl.get("project_code", "")
-                st.session_state["tmpl_docform"] = tmpl.get("document_form", "")
-                st.session_state["tmpl_revision"] = tmpl.get("revision", "0")
-                st.session_state["tmpl_extension"] = tmpl.get("extension", "pdf")
-                st.rerun()
-
         st.markdown("</div>", unsafe_allow_html=True)
 
     with col2:
         # Format selector
         st.subheader("Choose Naming Format")
 
-        # Use template values if set
-        default_format = st.session_state.pop("tmpl_format", "basic")
         format_options = ["basic", "advanced", "course"]
         format_type = st.radio(
             "Format",
             format_options,
-            index=format_options.index(default_format) if default_format in format_options else 0,
+            index=0,
             format_func=lambda x: {
                 "basic": "Basic Format - For simple documents",
                 "advanced": "Advanced Format - For departmental/project documents",
@@ -231,55 +204,46 @@ with tab1:
 
             date_val = st.date_input("Date *", value=datetime.now())
 
-            default_rev = st.session_state.pop("tmpl_revision", "0")
             rev_keys = list(REVISION_STATUSES.keys())
             revision = st.selectbox(
                 "Revision Status *",
                 rev_keys,
                 format_func=lambda x: REVISION_STATUSES[x],
-                index=rev_keys.index(default_rev) if default_rev in rev_keys else 3,
+                index=3,
             )
 
         with col_b:
-            default_ext = st.session_state.pop("tmpl_extension", "pdf")
             ext_keys = list(FILE_EXTENSIONS.keys())
             extension = st.selectbox(
                 "File Extension",
                 ext_keys,
                 format_func=lambda x: FILE_EXTENSIONS[x],
-                index=ext_keys.index(default_ext) if default_ext in ext_keys else 0,
+                index=0,
             )
 
             # Advanced fields
             if format_type in ("advanced", "course"):
-                default_proj = st.session_state.pop("tmpl_project", "")
                 project_code = st.text_input(
                     "Project/Account Number",
-                    value=default_proj,
                     placeholder="e.g., CPE",
                     help="Optional: Control number, project code, or account identifier",
                 )
 
-                default_docform = st.session_state.pop("tmpl_docform", "")
                 doc_keys = list(DOCUMENT_FORMS.keys())
                 document_form = st.selectbox(
                     "Document Form",
                     doc_keys,
                     format_func=lambda x: DOCUMENT_FORMS[x],
-                    index=doc_keys.index(default_docform) if default_docform in doc_keys else 0,
+                    index=0,
                 )
             else:
-                project_code = st.session_state.pop("tmpl_project", "")
-                document_form = st.session_state.pop("tmpl_docform", "")
                 project_code = ""
                 document_form = ""
 
             # Course-specific fields
             if format_type == "course":
-                default_faculty = st.session_state.pop("tmpl_faculty", "")
                 faculty_school = st.text_input(
                     "Faculty-School",
-                    value=default_faculty,
                     placeholder="e.g., FHSD-SoN",
                     help="Use dash to separate faculty and school",
                 )
@@ -296,13 +260,12 @@ with tab1:
                     help="Format: YYYYST (Year + Session + Term)",
                 )
             else:
-                st.session_state.pop("tmpl_faculty", None)
                 faculty_school = ""
                 course_code = ""
                 term = ""
 
         # Buttons row
-        btn_col1, btn_col2, btn_col3 = st.columns([2, 1, 1])
+        btn_col1, btn_col2 = st.columns([2, 1])
 
         with btn_col1:
             generate_clicked = st.button(
@@ -313,31 +276,7 @@ with tab1:
 
         with btn_col2:
             if st.button("Clear Form", use_container_width=True):
-                for key in ["template_selector"]:
-                    if key in st.session_state:
-                        del st.session_state[key]
                 st.rerun()
-
-        with btn_col3:
-            save_template = st.button("Save as Template", use_container_width=True)
-
-        # Save template dialog
-        if save_template and subject:
-            template_name = st.text_input("Template name:", key="new_template_name")
-            if template_name and st.button("Confirm Save"):
-                save_custom_template(
-                    st.session_state,
-                    template_name,
-                    {
-                        "format_type": format_type,
-                        "faculty_school": faculty_school,
-                        "project_code": project_code,
-                        "document_form": document_form,
-                        "revision": revision,
-                        "extension": extension,
-                    },
-                )
-                st.success(f"Template '{template_name}' saved!")
 
         if generate_clicked:
             if not subject or not date_val or not revision:
@@ -1047,22 +986,6 @@ with tab4:
     st.divider()
     st.caption(f"Session started: {analytics.get('session_start', 'N/A')}")
 
-    # Manage custom templates
-    st.divider()
-    st.subheader("Manage Custom Templates")
-
-    custom_templates = st.session_state.get("custom_templates", {})
-    if custom_templates:
-        for name in list(custom_templates.keys()):
-            col_t1, col_t2 = st.columns([4, 1])
-            with col_t1:
-                st.write(f"\U0001f4c4 **{name}** - {custom_templates[name].get('format_type', 'basic')} format")
-            with col_t2:
-                if st.button("Delete", key=f"del_tmpl_{name}"):
-                    delete_custom_template(st.session_state, name)
-                    st.rerun()
-    else:
-        st.write("No custom templates saved. Use 'Save as Template' in the Manual Generator tab.")
 
 
 # ─── Footer ────────────────────────────────────────────────────────────────

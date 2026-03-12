@@ -7,10 +7,6 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from ui_components import (
-    get_default_templates,
-    get_all_templates,
-    save_custom_template,
-    delete_custom_template,
     init_analytics,
     track_filename_generated,
     track_ai_analysis,
@@ -27,37 +23,6 @@ from ui_components import (
 class MockSessionState(dict):
     """Mock for st.session_state."""
     pass
-
-
-class TestTemplates:
-    def test_default_templates_exist(self):
-        templates = get_default_templates()
-        assert len(templates) > 0
-        assert "Meeting Minutes" in templates
-
-    def test_default_template_structure(self):
-        templates = get_default_templates()
-        for name, tmpl in templates.items():
-            assert "format_type" in tmpl
-            assert tmpl["format_type"] in ("basic", "advanced", "course")
-
-    def test_save_custom_template(self):
-        session = MockSessionState()
-        save_custom_template(session, "My Template", {"format_type": "basic"})
-        assert "My Template" in session["custom_templates"]
-
-    def test_get_all_templates_merges(self):
-        session = MockSessionState()
-        save_custom_template(session, "Custom", {"format_type": "course"})
-        all_templates = get_all_templates(session)
-        assert "Custom" in all_templates
-        assert "Meeting Minutes" in all_templates  # Default still present
-
-    def test_delete_custom_template(self):
-        session = MockSessionState()
-        save_custom_template(session, "ToDelete", {"format_type": "basic"})
-        delete_custom_template(session, "ToDelete")
-        assert "ToDelete" not in session.get("custom_templates", {})
 
 
 class TestAnalytics:
