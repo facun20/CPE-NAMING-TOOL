@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UBC CPE File Naming Tool</title>
+    <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body>
+
+<!-- ─── Login Overlay ─────────────────────────────────────────── -->
+<div id="login-overlay" class="login-overlay">
+    <div class="login-card">
+        <h1>UBC CPE File Naming Tool</h1>
+        <div class="gold-line"></div>
+        <p class="subtitle">Continuing Professional Education</p>
+        <form id="login-form">
+            <div class="form-group">
+                <input type="password" id="login-password" placeholder="Enter password" autofocus>
+            </div>
+            <button type="submit" class="btn btn-primary btn-block">Sign In</button>
+            <div id="login-error" class="login-error"></div>
+        </form>
+    </div>
+</div>
+
+<!-- ─── App Shell ─────────────────────────────────────────────── -->
+<div id="app-shell" class="hidden">
+
+    <!-- Header -->
+    <header class="app-header">
+        <div class="brand">
+            <h1>UBC CPE File Naming Tool</h1>
+            <span class="version-badge">v2.0</span>
+        </div>
+        <button id="logout-btn" class="logout-btn">Sign Out</button>
+    </header>
+
+    <!-- Tab Navigation -->
+    <nav class="tab-nav">
+        <button class="tab-btn active" data-tab="generator">Filename Generator</button>
+        <button class="tab-btn" data-tab="analyzer">AI File Analyzer</button>
+        <button class="tab-btn" data-tab="location">File Location</button>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="main-content">
+
+        <!-- ═══ Generator Tab ═══ -->
+        <section id="tab-generator" class="tab-panel active">
+
+            <div class="two-col">
+                <div>
+                    <div class="card">
+                        <h3 class="card-title">Format Type</h3>
+                        <div class="radio-group">
+                            <div class="radio-option">
+                                <input type="radio" name="format-type" id="fmt-basic" value="basic" checked>
+                                <label for="fmt-basic">Basic</label>
+                            </div>
+                            <div class="radio-option">
+                                <input type="radio" name="format-type" id="fmt-advanced" value="advanced">
+                                <label for="fmt-advanced">Advanced</label>
+                            </div>
+                            <div class="radio-option">
+                                <input type="radio" name="format-type" id="fmt-course" value="course">
+                                <label for="fmt-course">Course</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <h3 class="card-title">Required Fields</h3>
+
+                        <div class="form-group">
+                            <label for="gen-subject">Subject / Activity</label>
+                            <div class="hint">PascalCase, no spaces (e.g., NamingConventions)</div>
+                            <input type="text" id="gen-subject" placeholder="e.g., NamingConventions">
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="gen-date">Date</label>
+                                <input type="date" id="gen-date">
+                            </div>
+                            <div class="form-group">
+                                <label for="gen-revision">Revision Status</label>
+                                <select id="gen-revision"></select>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="gen-extension">File Extension</label>
+                            <select id="gen-extension"></select>
+                        </div>
+                    </div>
+
+                    <!-- Advanced/Course Fields -->
+                    <div id="gen-advanced-fields" class="card hidden">
+                        <h3 class="card-title">Advanced Fields</h3>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="gen-project-code">Project / Account Code</label>
+                                <input type="text" id="gen-project-code" placeholder="e.g., CPE">
+                            </div>
+                            <div class="form-group">
+                                <label for="gen-document-form">Document Form</label>
+                                <select id="gen-document-form"></select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="gen-course-fields" class="card hidden">
+                        <h3 class="card-title">Course Fields</h3>
+
+                        <div class="form-group">
+                            <label for="gen-faculty-school">Faculty-School</label>
+                            <select id="gen-faculty-school"></select>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="gen-course-code">Course Code</label>
+                                <div class="hint">Format: ####-#### (e.g., 0386-0001)</div>
+                                <input type="text" id="gen-course-code" placeholder="0386-0001">
+                            </div>
+                            <div class="form-group">
+                                <label for="gen-term">Term Offered</label>
+                                <div class="hint">Format: YYYYST (e.g., 2024WT1)</div>
+                                <input type="text" id="gen-term" placeholder="2024WT1">
+                            </div>
+                        </div>
+                    </div>
+
+                    <button id="gen-submit" class="btn btn-primary btn-block">Generate Filename</button>
+
+                    <!-- Errors -->
+                    <div id="gen-errors" style="display: none;" class="mt-16"></div>
+
+                    <!-- Result -->
+                    <div id="gen-result" class="mt-16" style="display: none;">
+                        <div class="result-card">
+                            <div class="result-label">Standard Filename (underscores)</div>
+                            <div class="result-filename" id="gen-standard-name"></div>
+                            <button class="copy-btn" id="gen-copy-standard">Copy</button>
+                        </div>
+                        <div class="result-card">
+                            <div class="result-label">SharePoint Filename (spaces)</div>
+                            <div class="result-filename" id="gen-sharepoint-name"></div>
+                            <button class="copy-btn" id="gen-copy-sharepoint">Copy</button>
+                        </div>
+                        <div class="mt-8">
+                            <span id="gen-length-badge" class="length-badge info"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Help Panel -->
+                <div>
+                    <div class="card">
+                        <h3 class="card-title">Field Reference</h3>
+                        <div class="form-group">
+                            <label for="gen-help-select">Select a field to learn more</label>
+                            <select id="gen-help-select">
+                                <option value="">Choose a field...</option>
+                                <option value="subject">Subject / Activity</option>
+                                <option value="date">Date</option>
+                                <option value="revisionStatus">Revision Status</option>
+                                <option value="projectCode">Project / Account Code</option>
+                                <option value="documentForm">Document Form</option>
+                                <option value="facultySchool">Faculty-School</option>
+                                <option value="courseCode">Course Code</option>
+                                <option value="termOffered">Term Offered</option>
+                            </select>
+                        </div>
+                        <div id="gen-help-content" class="help-panel" style="display: none;"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ═══ Analyzer Tab ═══ -->
+        <section id="tab-analyzer" class="tab-panel">
+
+            <div class="card">
+                <h3 class="card-title">Upload Files</h3>
+
+                <div id="drop-zone" class="drop-zone">
+                    <div class="icon">&#128194;</div>
+                    <div class="label">Drag & drop files here, or click to browse</div>
+                    <div class="hint">Supports PDF, Word, Excel, Images, Text, CSV</div>
+                </div>
+                <input type="file" id="file-input" multiple accept=".pdf,.docx,.doc,.xlsx,.xls,.csv,.txt,.jpg,.jpeg,.png,.gif" style="display: none;">
+            </div>
+
+            <!-- File list -->
+            <div id="file-list-section" style="display: none;">
+                <div class="card">
+                    <h3 class="card-title">Selected Files</h3>
+                    <ul id="file-list" class="file-list"></ul>
+                </div>
+            </div>
+
+            <!-- PII Warning -->
+            <div id="pii-warning-banner" class="pii-warning" style="display: none;"></div>
+
+            <!-- AI Config -->
+            <div class="card">
+                <h3 class="card-title">Analysis Settings</h3>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="ai-provider">AI Provider</label>
+                        <select id="ai-provider">
+                            <option value="gemini">Gemini (via OpenRouter - FREE)</option>
+                            <option value="claude">Claude (Anthropic - Paid)</option>
+                            <option value="offline">Offline (Rule-based)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="ai-api-key">API Key (optional if set in env)</label>
+                        <input type="password" id="ai-api-key" placeholder="Enter API key...">
+                    </div>
+                </div>
+
+                <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+                    <button id="analyze-btn" class="btn btn-primary">Analyze Files</button>
+                    <button id="export-csv-btn" class="btn btn-secondary">Export CSV</button>
+                    <button id="clear-analyzer-btn" class="btn btn-secondary">Clear All</button>
+                </div>
+            </div>
+
+            <!-- Progress -->
+            <div id="progress-container" class="progress-container">
+                <div class="progress-bar-wrapper">
+                    <div id="progress-bar" class="progress-bar"></div>
+                </div>
+                <div id="progress-text" class="progress-text"></div>
+            </div>
+
+            <!-- Results -->
+            <div id="analyzer-results-section" style="display: none;">
+                <h3 class="card-title mt-24">Results</h3>
+                <div id="analyzer-results"></div>
+            </div>
+        </section>
+
+        <!-- ═══ Location Tab ═══ -->
+        <section id="tab-location" class="tab-panel">
+
+            <div class="two-col">
+                <div>
+                    <div class="card">
+                        <h3 class="card-title">Path Type</h3>
+                        <div class="radio-group">
+                            <div class="radio-option">
+                                <input type="radio" name="path-type" id="path-internal" value="internal" checked>
+                                <label for="path-internal">CPE Internal</label>
+                            </div>
+                            <div class="radio-option">
+                                <input type="radio" name="path-type" id="path-partner" value="partner">
+                                <label for="path-partner">Partner-Related</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- CPE Internal Fields -->
+                    <div id="loc-internal-fields">
+                        <div class="card">
+                            <h3 class="card-title">CPE Internal</h3>
+
+                            <div class="form-group">
+                                <label for="loc-cpe-block">Functional Block</label>
+                                <select id="loc-cpe-block"></select>
+                            </div>
+
+                            <div id="loc-cpe-subcat-group" class="form-group hidden">
+                                <label for="loc-cpe-subcat">Sub-Category</label>
+                                <select id="loc-cpe-subcat"></select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Partner Fields -->
+                    <div id="loc-partner-fields" class="hidden">
+                        <div class="card">
+                            <h3 class="card-title">Partner Details</h3>
+
+                            <div class="form-group">
+                                <label for="loc-partner">Partner (Faculty-School)</label>
+                                <select id="loc-partner"></select>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="loc-phase">Phase</label>
+                                <select id="loc-phase">
+                                    <option value="">Select a phase...</option>
+                                    <option value="Definition and Approvals">Definition and Approvals</option>
+                                    <option value="Production and Delivery">Production and Delivery</option>
+                                </select>
+                            </div>
+
+                            <!-- Definition & Approvals fields -->
+                            <div id="loc-def-fields" class="hidden">
+                                <div class="form-group">
+                                    <label for="loc-subject-area">Subject Area</label>
+                                    <input type="text" id="loc-subject-area" placeholder="e.g., Data Analytics">
+                                </div>
+                                <div class="form-group">
+                                    <label for="loc-file-type-def">File Type</label>
+                                    <select id="loc-file-type-def"></select>
+                                </div>
+                            </div>
+
+                            <!-- Production & Delivery fields -->
+                            <div id="loc-prod-fields" class="hidden">
+                                <div class="form-group">
+                                    <label for="loc-credential">Credential Name</label>
+                                    <input type="text" id="loc-credential" placeholder="e.g., Certificate in Data Analytics">
+                                </div>
+
+                                <div class="form-group">
+                                    <label>
+                                        <input type="checkbox" id="loc-applies-all" checked>
+                                        Applies to all occurrences
+                                    </label>
+                                </div>
+
+                                <div id="loc-occurrence-group" class="form-group hidden">
+                                    <label for="loc-occurrence">Occurrence Code</label>
+                                    <div class="hint">e.g., 2024WT1</div>
+                                    <input type="text" id="loc-occurrence" placeholder="2024WT1">
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="loc-file-type-prod">File Type</label>
+                                    <select id="loc-file-type-prod"></select>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <button id="loc-submit" class="btn btn-primary btn-block">Show File Location</button>
+
+                    <!-- Result -->
+                    <div id="loc-result" class="mt-16" style="display: none;">
+                        <div class="result-card">
+                            <div class="result-label">Breadcrumb Path</div>
+                            <div id="loc-breadcrumb" class="breadcrumb-path"></div>
+                        </div>
+                        <div class="result-card">
+                            <div class="result-label">Folder Path</div>
+                            <div id="loc-folder-path" class="folder-path"></div>
+                            <button class="copy-btn mt-8" id="loc-copy-path">Copy Path</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Help Panel -->
+                <div>
+                    <div class="card">
+                        <h3 class="card-title">Location Guide</h3>
+                        <div class="help-panel mb-16">
+                            <h4>Partner-Related vs CPE Internal</h4>
+                            <p><strong>Partner-Related:</strong> Files tied to a specific faculty/school partnership and their courses/programs.</p>
+                            <p><strong>CPE Internal:</strong> Files about running CPE as a unit, not tied to any specific partner.</p>
+                        </div>
+                        <div class="help-panel mb-16">
+                            <h4>Definition & Approvals vs Production & Delivery</h4>
+                            <p><strong>Definition & Approvals:</strong> Files about getting a program started.</p>
+                            <p><strong>Production & Delivery:</strong> Files about running an active program.</p>
+                        </div>
+                        <div class="help-panel">
+                            <h4>Credential vs Occurrence Level</h4>
+                            <p><strong>Credential Level:</strong> Files that apply to ALL offerings.</p>
+                            <p><strong>Occurrence Level:</strong> Files specific to a particular term's offering.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="toast"></div>
+
+<!-- Scripts -->
+<script type="module" src="/static/js/app.js"></script>
+
+</body>
+</html>

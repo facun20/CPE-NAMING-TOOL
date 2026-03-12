@@ -18,11 +18,6 @@ RUN python -m spacy download en_core_web_sm
 COPY . .
 
 # Railway injects PORT env var
-EXPOSE 8501
+EXPOSE 8000
 
-CMD streamlit run app.py \
-    --server.port=${PORT:-8501} \
-    --server.address=0.0.0.0 \
-    --server.headless=true \
-    --server.fileWatcherType=none \
-    --browser.gatherUsageStats=false
+CMD uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}
