@@ -102,26 +102,48 @@ function renderFileList() {
     }
 
     section.style.display = 'block';
+    const config = window.APP_CONFIG;
+    const labels = config ? config.pii_entity_labels : {};
+
     list.innerHTML = selectedFiles
         .map((file, idx) => {
             const pii = piiResults[file.name];
             let piiBadge = '';
+            let piiDetail = '';
             if (pii) {
                 const count = pii.pii_items.length;
                 if (count > 0) {
                     piiBadge = `<span class="pii-badge warning">${count} PII found</span>`;
+                    // Build per-type summary
+                    const typeCounts = {};
+                    for (const item of pii.pii_items) {
+                        typeCounts[item.type] = (typeCounts[item.type] || 0) + 1;
+                    }
+                    const typeList = Object.entries(typeCounts)
+                        .map(([type, c]) => `<li>${labels[type] || type}: ${c} found</li>`)
+                        .join('');
+                    piiDetail = `
+                        <div class="pii-detail">
+                            <ul>${typeList}</ul>
+                            <span class="pii-detail-note">All PII will be automatically scrubbed before AI analysis.</span>
+                        </div>`;
                 } else {
-                    piiBadge = `<span class="pii-badge clean">No PII</span>`;
+                    piiBadge = `<span class="pii-badge clean">No PII detected</span>`;
                 }
+            } else {
+                piiBadge = `<span class="pii-badge" style="background:#EDF2F7;color:#718096;">Scanning...</span>`;
             }
             return `
-                <li class="file-item">
-                    <div>
-                        <span class="file-name">${file.name}</span>
-                        <span class="file-size">${formatFileSize(file.size)}</span>
-                        ${piiBadge}
+                <li class="file-item-wrap">
+                    <div class="file-item">
+                        <div>
+                            <span class="file-name">${file.name}</span>
+                            <span class="file-size">${formatFileSize(file.size)}</span>
+                            ${piiBadge}
+                        </div>
+                        <button class="remove-btn" data-idx="${idx}" title="Remove">&times;</button>
                     </div>
-                    <button class="remove-btn" data-idx="${idx}" title="Remove">&times;</button>
+                    ${piiDetail}
                 </li>`;
         })
         .join('');
@@ -157,7 +179,7 @@ function updatePIIBanner() {
         const parts = Object.entries(typeSummary)
             .map(([type, count]) => `${labels[type] || type}: ${count}`)
             .join(', ');
-        banner.innerHTML = `<strong>PII Detected:</strong> ${totalPII} item(s) found and will be scrubbed before AI analysis. (${parts})`;
+        banner.innerHTML = `<strong>PII Detected Across Files:</strong> ${totalPII} item(s) found (${parts}). <strong>All personal information will be automatically removed before any data is sent to AI for analysis.</strong>`;
         banner.style.display = 'block';
     } else {
         banner.style.display = 'none';

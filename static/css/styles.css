@@ -508,6 +508,54 @@ select:focus {
     color: var(--error);
 }
 
+.file-item-wrap {
+    margin-bottom: 8px;
+}
+
+.file-item-wrap .file-item {
+    margin-bottom: 0;
+}
+
+/* ─── PII Detail (per-file) ──────────────────────────────────── */
+
+.pii-detail {
+    background: #FFF5F5;
+    border: 1px solid #FED7D7;
+    border-top: none;
+    border-radius: 0 0 var(--radius) var(--radius);
+    padding: 10px 14px;
+    font-size: 13px;
+}
+
+.pii-detail ul {
+    list-style: none;
+    margin: 0 0 6px;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 16px;
+}
+
+.pii-detail ul li {
+    color: #9B2C2C;
+    font-weight: 500;
+}
+
+.pii-detail ul li::before {
+    content: "\26A0\FE0F ";
+}
+
+.pii-detail-note {
+    display: block;
+    color: #22543D;
+    font-weight: 600;
+    font-size: 12px;
+    background: #C6F6D5;
+    padding: 4px 10px;
+    border-radius: 4px;
+    margin-top: 4px;
+}
+
 /* ─── PII Badges ─────────────────────────────────────────────── */
 
 .pii-badge {
