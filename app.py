@@ -97,6 +97,14 @@ def _get_auth_config() -> dict:
 
     # Check for simple team password via env var (easiest for Railway)
     team_password = os.environ.get("APP_PASSWORD", "")
+
+    # Also check Streamlit secrets as fallback
+    if not team_password:
+        try:
+            team_password = st.secrets.get("APP_PASSWORD", "")
+        except Exception:
+            pass
+
     if team_password:
         config["enabled"] = True
         config["mode"] = "team"
