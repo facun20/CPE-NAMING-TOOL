@@ -18,6 +18,7 @@ Modules:
 
 import streamlit as st
 import re
+import os
 from datetime import datetime
 
 from pii_scrubber import (
@@ -85,14 +86,41 @@ st.markdown(ACCESSIBILITY_HTML, unsafe_allow_html=True)
 
 # ─── Authentication ────────────────────────────────────────────────────────
 
-def check_auth() -> bool:
-    """Check if authentication is enabled and if user is authenticated."""
+def _get_auth_config() -> dict:
+    """Get authentication configuration from secrets or environment variables.
+
+    Supports two modes:
+    1. Simple team password: Set APP_PASSWORD env var in Railway
+    2. Individual users: Set USERS section in Streamlit secrets
+    """
+    config = {"enabled": False, "mode": None, "team_password": None, "users": {}}
+
+    # Check for simple team password via env var (easiest for Railway)
+    team_password = os.environ.get("APP_PASSWORD", "")
+    if team_password:
+        config["enabled"] = True
+        config["mode"] = "team"
+        config["team_password"] = team_password
+        return config
+
+    # Check Streamlit secrets for individual user auth
     try:
         auth_enabled = st.secrets.get("AUTH_ENABLED", False)
+        if auth_enabled:
+            config["enabled"] = True
+            config["mode"] = "users"
+            config["users"] = dict(st.secrets.get("USERS", {}))
     except Exception:
-        return True  # No secrets configured, skip auth
+        pass
 
-    if not auth_enabled:
+    return config
+
+
+def check_auth() -> bool:
+    """Check if authentication is enabled and if user is authenticated."""
+    auth_config = _get_auth_config()
+
+    if not auth_config["enabled"]:
         return True
 
     if st.session_state.get("authenticated"):
@@ -106,21 +134,32 @@ def check_auth() -> bool:
     """, unsafe_allow_html=True)
 
     with st.form("login_form"):
-        username = st.text_input("Username", autocomplete="username")
-        password = st.text_input("Password", type="password", autocomplete="current-password")
-        submitted = st.form_submit_button("Sign In", type="primary", use_container_width=True)
+        if auth_config["mode"] == "team":
+            # Simple team password mode
+            password = st.text_input("Enter team password:", type="password", autocomplete="current-password")
+            submitted = st.form_submit_button("Sign In", type="primary", use_container_width=True)
 
-        if submitted:
-            try:
-                valid_users = st.secrets.get("USERS", {})
+            if submitted:
+                if password == auth_config["team_password"]:
+                    st.session_state["authenticated"] = True
+                    st.session_state["username"] = "team"
+                    st.rerun()
+                else:
+                    st.error("Incorrect password.")
+        else:
+            # Individual user mode
+            username = st.text_input("Username", autocomplete="username")
+            password = st.text_input("Password", type="password", autocomplete="current-password")
+            submitted = st.form_submit_button("Sign In", type="primary", use_container_width=True)
+
+            if submitted:
+                valid_users = auth_config["users"]
                 if username in valid_users and valid_users[username] == password:
                     st.session_state["authenticated"] = True
                     st.session_state["username"] = username
                     st.rerun()
                 else:
                     st.error("Invalid username or password.")
-            except Exception:
-                st.error("Authentication configuration error.")
 
     return False
 
