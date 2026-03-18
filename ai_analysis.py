@@ -309,7 +309,7 @@ def analyze_with_gemini(
             OPENROUTER_BASE_URL,
             headers={
                 "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json; charset=utf-8",
+                "Content-Type": "application/json",
                 "HTTP-Referer": "https://ubc-cpe-naming-tool.streamlit.app",
                 "X-Title": "UBC CPE File Naming Tool",
             },
