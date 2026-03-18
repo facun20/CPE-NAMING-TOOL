@@ -142,6 +142,31 @@ def image_to_base64(file_bytes: bytes, file_name: str) -> str:
     return f"data:{mime_type};base64,{base64_data}"
 
 
+def _sanitize_text(text: str) -> str:
+    """Replace unicode characters that cause latin-1 encoding errors.
+
+    Word documents often contain smart quotes, em dashes, and other
+    typographic characters that can break HTTP libraries. Replace with
+    ASCII equivalents.
+    """
+    replacements = {
+        "\u2018": "'",   # left single quote
+        "\u2019": "'",   # right single quote
+        "\u201c": '"',   # left double quote
+        "\u201d": '"',   # right double quote
+        "\u2013": "-",   # en dash
+        "\u2014": "--",  # em dash
+        "\u2026": "...", # ellipsis
+        "\u00a0": " ",   # non-breaking space
+        "\u200b": "",    # zero-width space
+        "\u2022": "*",   # bullet
+        "\u00b7": "*",   # middle dot
+    }
+    for char, replacement in replacements.items():
+        text = text.replace(char, replacement)
+    return text
+
+
 def read_file_content(uploaded_file) -> tuple:
     """Read content from uploaded file. Returns (content, content_type).
 
@@ -156,13 +181,13 @@ def read_file_content(uploaded_file) -> tuple:
         pdf_image = pdf_to_image(file_bytes)
         if pdf_image:
             return pdf_image, "image"
-        return read_pdf_content(file_bytes), "text"
+        return _sanitize_text(read_pdf_content(file_bytes)), "text"
     elif file_name.endswith(".docx"):
-        return read_docx_content(file_bytes), "text"
+        return _sanitize_text(read_docx_content(file_bytes)), "text"
     elif file_name.endswith((".xlsx", ".xls")):
-        return read_xlsx_content(file_bytes), "text"
+        return _sanitize_text(read_xlsx_content(file_bytes)), "text"
     elif file_name.endswith((".txt", ".csv")):
-        return file_bytes.decode("utf-8", errors="ignore")[:MAX_TEXT_CONTENT], "text"
+        return _sanitize_text(file_bytes.decode("utf-8", errors="ignore")[:MAX_TEXT_CONTENT]), "text"
     elif file_name.endswith((".jpg", ".jpeg", ".png", ".gif")):
         return image_to_base64(file_bytes, file_name), "image"
     else:

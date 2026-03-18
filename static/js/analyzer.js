@@ -110,7 +110,7 @@ function renderFileList() {
             const pii = piiResults[file.name];
             let piiBadge = '';
             let piiDetail = '';
-            if (pii) {
+            if (pii && pii.pii_items) {
                 const count = pii.pii_items.length;
                 if (count > 0) {
                     piiBadge = `<span class="pii-badge warning">${count} PII found</span>`;
