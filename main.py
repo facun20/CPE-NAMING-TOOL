@@ -216,21 +216,27 @@ async def api_file_location(request: Request):
 
 @app.post("/api/scan-pii", dependencies=[Depends(require_auth)])
 async def api_scan_pii(file: UploadFile = File(...)):
-    content_bytes = await file.read()
-    adapter = FileAdapter(file, content_bytes)
+    try:
+        content_bytes = await file.read()
+        adapter = FileAdapter(file, content_bytes)
 
-    content, content_type = read_file_content(adapter)
+        content, content_type = read_file_content(adapter)
 
-    if content_type == "text" and isinstance(content, str):
-        scrubbed, detected = scrub_text(content)
-        summary = get_pii_summary(detected)
-        return {
-            "filename": file.filename,
-            "pii_items": detected,
-            "pii_summary": summary,
-        }
+        if content_type == "text" and isinstance(content, str):
+            scrubbed, detected = scrub_text(content)
+            summary = get_pii_summary(detected)
+            return {
+                "filename": file.filename,
+                "pii_items": detected,
+                "pii_summary": summary,
+            }
 
-    return {"filename": file.filename, "pii_items": [], "pii_summary": {}}
+        return {"filename": file.filename, "pii_items": [], "pii_summary": {}}
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"filename": file.filename, "pii_items": [], "pii_summary": {}, "error": str(e)},
+        )
 
 
 @app.post("/api/analyze", dependencies=[Depends(require_auth)])
