@@ -337,8 +337,7 @@ def analyze_with_gemini(
         if response.status_code != 200:
             error_data = response.json() if response.text else {}
             error_msg = error_data.get("error", {}).get("message", f"HTTP {response.status_code}")
-            key_hint = f"(key: {api_key[:8]}...)" if len(api_key) > 8 else "(key too short)"
-            return {"success": False, "error": f"API error: {error_msg} {key_hint}"}
+            return {"success": False, "error": f"API error: {error_msg}"}
 
         result_data = response.json()
         response_text = result_data["choices"][0]["message"]["content"]
