@@ -304,16 +304,14 @@ def analyze_with_gemini(
                 }
             ]
 
-        payload = json.dumps({"model": GEMINI_MODEL, "messages": messages}, ensure_ascii=False)
         response = requests.post(
             OPENROUTER_BASE_URL,
             headers={
                 "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
                 "HTTP-Referer": "https://ubc-cpe-naming-tool.streamlit.app",
                 "X-Title": "UBC CPE File Naming Tool",
             },
-            data=payload.encode("utf-8"),
+            json={"model": GEMINI_MODEL, "messages": messages},
             timeout=60,
         )
 
