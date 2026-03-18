@@ -275,6 +275,9 @@ def analyze_with_gemini(
     try:
         import requests
 
+        if not api_key:
+            return {"success": False, "error": "No API key provided. Enter your OpenRouter key or set OPENROUTER_API_KEY env var."}
+
         today = datetime.now().strftime("%Y-%m-%d")
         is_pdf = file_name.lower().endswith(".pdf")
         prompt = _build_analysis_prompt(file_name, today, content_type, is_pdf)
@@ -304,21 +307,38 @@ def analyze_with_gemini(
                 }
             ]
 
-        response = requests.post(
+        payload = {"model": GEMINI_MODEL, "messages": messages}
+
+        # Use a Session to preserve auth headers across redirects
+        session = requests.Session()
+        session.headers.update({
+            "Authorization": f"Bearer {api_key}",
+            "HTTP-Referer": "https://ubc-cpe-naming-tool.streamlit.app",
+            "X-Title": "UBC CPE File Naming Tool",
+        })
+        response = session.post(
             OPENROUTER_BASE_URL,
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "HTTP-Referer": "https://ubc-cpe-naming-tool.streamlit.app",
-                "X-Title": "UBC CPE File Naming Tool",
-            },
-            json={"model": GEMINI_MODEL, "messages": messages},
+            json=payload,
             timeout=60,
+            allow_redirects=False,
         )
+
+        # Handle redirect manually to preserve auth header
+        if response.status_code in (301, 302, 307, 308):
+            redirect_url = response.headers.get("Location", "")
+            if redirect_url:
+                response = session.post(
+                    redirect_url,
+                    json=payload,
+                    timeout=60,
+                    allow_redirects=False,
+                )
 
         if response.status_code != 200:
             error_data = response.json() if response.text else {}
             error_msg = error_data.get("error", {}).get("message", f"HTTP {response.status_code}")
-            return {"success": False, "error": f"API error: {error_msg}"}
+            key_hint = f"(key: {api_key[:8]}...)" if len(api_key) > 8 else "(key too short)"
+            return {"success": False, "error": f"API error: {error_msg} {key_hint}"}
 
         result_data = response.json()
         response_text = result_data["choices"][0]["message"]["content"]
